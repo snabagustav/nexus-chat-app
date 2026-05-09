@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexus — Chat, Calls & Games</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<!-- ── AUTH SCREEN ─────────────────────────────────────────────────────── -->
+<div id="auth-screen" class="screen active">
+  <div class="auth-bg">
+    <div class="auth-orb orb1"></div>
+    <div class="auth-orb orb2"></div>
+    <div class="auth-orb orb3"></div>
+  </div>
+  <div class="auth-card">
+    <div class="auth-logo">
+      <span class="logo-icon">✦</span>
+      <span class="logo-text">NEXUS</span>
+    </div>
+    <p class="auth-tagline">Chat. Call. Play.</p>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">Sign In</button>
+      <button class="auth-tab" data-tab="register">Register</button>
+    </div>
+
+    <!-- Login -->
+    <div id="tab-login" class="auth-form active">
+      <button id="btn-google" class="btn-google">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <div class="divider"><span>or</span></div>
+      <input type="email" id="login-email" placeholder="Email address" autocomplete="email">
+      <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
+      <button id="btn-login" class="btn-primary">Sign In →</button>
+      <div class="divider"><span>or</span></div>
+      <button id="btn-anon-toggle" class="btn-ghost">Continue Anonymously</button>
+      <div id="anon-form" style="display:none">
+        <input type="text" id="anon-name" placeholder="Your display name (required)" maxlength="30">
+        <button id="btn-anon" class="btn-primary">Enter as Guest →</button>
+      </div>
+    </div>
+
+    <!-- Register -->
+    <div id="tab-register" class="auth-form">
+      <button class="btn-google" onclick="document.getElementById('btn-google').click()">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Sign up with Google
+      </button>
+      <div class="divider"><span>or</span></div>
+      <input type="text" id="reg-username" placeholder="Display name" maxlength="30">
+      <input type="email" id="reg-email" placeholder="Email address">
+      <input type="password" id="reg-password" placeholder="Password (min 6 chars)">
+      <button id="btn-register" class="btn-primary">Create Account →</button>
+    </div>
+
+    <div id="auth-error" class="auth-error" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ── MAIN APP ─────────────────────────────────────────────────────────── -->
+<div id="app-screen" class="screen">
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-top">
+      <div class="sidebar-logo">✦ NEXUS</div>
+      <div id="online-badge" class="online-badge"><span id="online-count">0</span> online</div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-btn active" data-view="chat"><span class="nav-icon">💬</span>Chat</button>
+      <button class="nav-btn" data-view="calls"><span class="nav-icon">📞</span>Calls</button>
+      <button class="nav-btn" data-view="games"><span class="nav-icon">🎮</span>Games</button>
+    </nav>
+
+    <div class="sidebar-section-label">ROOMS</div>
+    <div id="room-list" class="room-list"></div>
+
+    <div class="sidebar-bottom">
+      <div class="user-chip" id="user-chip">
+        <div class="user-avatar" id="sidebar-avatar"></div>
+        <div class="user-info">
+          <div class="user-name" id="sidebar-name"></div>
+          <div class="user-status">● Online</div>
+        </div>
+        <button id="btn-logout" title="Sign out">⎋</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main id="main-content">
+
+    <!-- CHAT VIEW -->
+    <div id="view-chat" class="view active">
+      <div class="chat-header">
+        <div class="chat-room-info">
+          <span id="current-room-icon" class="room-icon-big">💬</span>
+          <div>
+            <h2 id="current-room-name">Select a room</h2>
+            <span id="room-member-count" class="member-count"></span>
+          </div>
+        </div>
+        <div class="chat-header-actions">
+          <button id="btn-start-call" class="icon-btn" title="Start voice call">📞</button>
+        </div>
+      </div>
+
+      <div id="messages-area" class="messages-area">
+        <div class="welcome-splash">
+          <div class="splash-icon">✦</div>
+          <h3>Pick a room to start chatting</h3>
+        </div>
+      </div>
+
+      <div id="typing-indicator" class="typing-indicator" style="display:none"></div>
+
+      <div class="message-input-bar">
+        <input type="text" id="message-input" placeholder="Message…" maxlength="500" disabled>
+        <button id="btn-send" class="btn-send" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- CALLS VIEW -->
+    <div id="view-calls" class="view">
+      <div class="view-header"><h2>Voice & Video Calls</h2></div>
+      <div class="calls-layout">
+        <div class="call-panel">
+          <h3>Start or Join a Call</h3>
+          <p class="muted">Share the call ID with friends to let them join</p>
+          <div class="call-id-row">
+            <input type="text" id="call-id-input" placeholder="Call ID (leave blank to create new)">
+            <button id="btn-join-call" class="btn-primary">Join Call →</button>
+          </div>
+        </div>
+        <div id="call-area" class="call-area" style="display:none">
+          <div class="call-info-bar">
+            <span>📞 In call: <strong id="current-call-id"></strong></span>
+            <button id="btn-copy-call-id" class="btn-ghost sm">Copy ID</button>
+            <button id="btn-leave-call" class="btn-danger sm">Leave</button>
+          </div>
+          <div class="call-controls">
+            <button id="btn-toggle-mic" class="call-ctrl active" title="Mute/Unmute">🎤</button>
+            <button id="btn-toggle-cam" class="call-ctrl" title="Camera On/Off">📷</button>
+          </div>
+          <div id="video-grid" class="video-grid">
+            <div class="video-tile local-tile">
+              <video id="local-video" autoplay muted playsinline></video>
+              <div class="video-label" id="local-label">You</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GAMES VIEW -->
+    <div id="view-games" class="view">
+      <div class="view-header"><h2>Games</h2></div>
+      <div id="games-lobby">
+        <div class="games-grid">
+          <div class="game-card" data-type="chess">
+            <div class="game-card-icon">♟</div>
+            <h3>Chess</h3>
+            <p>Classic strategy game</p>
+            <button class="btn-primary game-create-btn" data-type="chess">Create Game</button>
+          </div>
+          <div class="game-card" data-type="tictactoe">
+            <div class="game-card-icon">⬜</div>
+            <h3>Tic-Tac-Toe</h3>
+            <p>Quick 3-in-a-row fun</p>
+            <button class="btn-primary game-create-btn" data-type="tictactoe">Create Game</button>
+          </div>
+          <div class="game-card" data-type="connect4">
+            <div class="game-card-icon">🟡</div>
+            <h3>Connect Four</h3>
+            <p>Drop discs, get 4 in a row</p>
+            <button class="btn-primary game-create-btn" data-type="connect4">Create Game</button>
+          </div>
+        </div>
+        <div class="join-game-row">
+          <input type="text" id="join-game-id" placeholder="Game ID to join" maxlength="10" style="text-transform:uppercase">
+          <button id="btn-join-game" class="btn-primary">Join Game →</button>
+        </div>
+      </div>
+      <div id="game-area" style="display:none"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Google Sign-In (replace YOUR_CLIENT_ID) -->
+<script src="https://accounts.google.com/gsi/client" async></script>
+<div id="g_id_onload"
+  data-client_id="707884755832-fudsvdqb0ufm7isbfo0030v56psddksn.apps.googleusercontent.com"
+  data-callback="handleGoogleSignIn"
+  data-auto_prompt="false"
+  style="display:none">
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
