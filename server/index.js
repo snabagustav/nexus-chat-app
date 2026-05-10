@@ -9,9 +9,16 @@ const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*', methods: ['GET', 'POST'] } });
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+});
 
 app.use(express.json());
+app.set('trust proxy', 1);
 app.use(express.static(path.join(__dirname, '../public')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'nexus_dev_secret_change_me';
