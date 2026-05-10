@@ -118,13 +118,7 @@ function startApp() {
     av.textContent = currentUser.avatar || currentUser.username[0].toUpperCase();
   }
 
-  if (currentUser.role === 'admin' || currentUser.role === 'moderator') {
-    const a = document.createElement('a');
-    a.href = '/admin.html';
-    a.style.cssText = 'display:block;padding:8px 10px;color:#7c6af7;font-size:13px;text-decoration:none;border-radius:8px;margin:2px 0;';
-    a.textContent = 'Admin Panel';
-    document.querySelector('.sidebar-nav').appendChild(a);
-  }
+  // Admin panel via secret command only
 
   socket = io({
     auth: { token: token },
@@ -271,13 +265,66 @@ document.getElementById('message-input').addEventListener('keydown', function(e)
 });
 document.getElementById('btn-send').addEventListener('click', sendMsg);
 
+const SWEAR_WORDS = ['fuck','shit','ass','bitch','cunt','dick','pussy','bastard','damn','hell','cock','whore','slut'];
+let swearCooldownUntil = 0;
+
+function containsSwear(text) {
+  const lower = text.toLowerCase();
+  return SWEAR_WORDS.some(w => {
+    const re = new RegExp('\\b' + w + '\\b', 'i');
+    return re.test(lower);
+  });
+}
+
 function sendMsg() {
   const input = document.getElementById('message-input');
   const content = input.value.trim();
   if (!content || !currentRoom) return;
+
+  // Secret admin command
+  if (content === 'Hombatomba12@') {
+    input.value = '';
+    window.location.href = '/admin.html';
+    return;
+  }
+
+  // Swear cooldown check (not for admins/mods)
+  if (currentUser.role !== 'admin' && currentUser.role !== 'moderator') {
+    const now = Date.now();
+    if (now < swearCooldownUntil) {
+      const secs = Math.ceil((swearCooldownUntil - now) / 1000);
+      showCooldownMsg(secs);
+      input.value = '';
+      return;
+    }
+    if (containsSwear(content)) {
+      swearCooldownUntil = now + 60000;
+      showCooldownMsg(60);
+      input.value = '';
+      return;
+    }
+  }
+
   socket.emit('send_message', { roomId: currentRoom, content: content });
   input.value = '';
   socket.emit('typing', { roomId: currentRoom, typing: false });
+}
+
+function showCooldownMsg(secs) {
+  const el = document.getElementById('typing-indicator');
+  el.style.display = 'block';
+  el.style.color = '#ef4444';
+  el.textContent = 'You used a swear word. You cannot send messages for ' + secs + ' seconds.';
+  const interval = setInterval(function() {
+    const remaining = Math.ceil((swearCooldownUntil - Date.now()) / 1000);
+    if (remaining <= 0) {
+      el.style.display = 'none';
+      el.style.color = '';
+      clearInterval(interval);
+    } else {
+      el.textContent = 'Cooldown: ' + remaining + ' seconds remaining.';
+    }
+  }, 1000);
 }
 
 document.getElementById('btn-start-call').addEventListener('click', function() {
