@@ -147,7 +147,7 @@ function startApp() {
     document.querySelector('.sidebar-nav').appendChild(adminBtn);
   }
 
-  socket = io({ auth: { token }, transports: ['websocket', 'polling'] });
+  socket = io({ auth: { token }, transports: ['polling'] });
   setupSocket();
   loadRooms();
 }
