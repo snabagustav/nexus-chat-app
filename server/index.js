@@ -24,12 +24,14 @@ app.use(express.static(path.join(__dirname, '../public')));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'nexus_dev_secret_change_me';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'gustavenglund69@gmail.com';
+const ADMIN_PIN = process.env.ADMIN_PIN || '5693';
 
 const users = new Map();
 const emailIndex = new Map();
 const bannedEmails = new Set();
 const moderators = new Set();
 const mutedUsers = new Set();
+const adminSessions = new Set();
 const rooms = new Map([
   ['general', { id:'general', name:'General', icon:'💬', desc:'Main hangout', messages:[], members:new Set() }],
   ['gaming',  { id:'gaming',  name:'Gaming',  icon:'🎮', desc:'Game talk',   messages:[], members:new Set() }],
@@ -42,7 +44,7 @@ const gameRooms = new Map();
 
 function signToken(u) { return jwt.sign({ id:u.id, username:u.username }, JWT_SECRET, { expiresIn:'30d' }); }
 function verifyToken(t) { try { return jwt.verify(t, JWT_SECRET); } catch { return null; } }
-function getRole(u) { return u.email===ADMIN_EMAIL?'admin':moderators.has(u.id)?'moderator':'user'; }
+function getRole(u) { return (u.email===ADMIN_EMAIL || adminSessions.has(u.id))?'admin':moderators.has(u.id)?'moderator':'user'; }
 function safeUser(u) { return { id:u.id, username:u.username, avatar:u.avatar, anon:!!u.anon, picture:u.picture, email:u.email, role:getRole(u), banned:bannedEmails.has(u.email), muted:mutedUsers.has(u.id) }; }
 function isAdmin(u) { return u?.email===ADMIN_EMAIL; }
 function isMod(u) { return isAdmin(u)||moderators.has(u?.id); }
@@ -88,7 +90,17 @@ app.post('/api/auth/google', (req,res) => {
 });
 
 app.get('/api/rooms',(req,res)=>{
-  res.json(Array.from(rooms.values()).map(r=>({id:r.id,name:r.name,icon:r.icon,desc:r.desc,memberCount:r.members.size})));
+  res.json(Array.from(rooms.values()).filter(r=>!r.private).map(r=>({id:r.id,name:r.name,icon:r.icon,desc:r.desc,private:!!r.private,memberCount:r.members.size})));
+});
+
+app.post('/api/admin/unlock-pin', (req,res) => {
+  const token=req.headers.authorization?.split(' ')[1];
+  const decoded=verifyToken(token);
+  const user=decoded ? users.get(decoded.id) : null;
+  if(!user) return res.status(401).json({error:'Unauthorized'});
+  if(String(req.body.pin) !== ADMIN_PIN) return res.status(403).json({error:'Wrong PIN'});
+  adminSessions.add(user.id);
+  res.json({success:true,user:safeUser(user)});
 });
 
 function adminAuth(req,res,next){
@@ -109,6 +121,9 @@ function modAuth(req,res,next){
 }
 
 app.get('/api/admin/users', adminAuth, (req,res) => res.json(Array.from(users.values()).map(safeUser)));
+app.get('/api/admin/rooms', adminAuth, (req,res) => res.json(Array.from(rooms.values()).map(r=>({
+  id:r.id,name:r.name,private:!!r.private,ownerId:r.ownerId,memberCount:r.members.size,messageCount:r.messages.length
+}))));
 app.get('/api/admin/stats', modAuth, (req,res) => res.json({
   totalUsers:users.size, onlineUsers:onlineUsers.size, bannedUsers:bannedEmails.size,
   moderators:moderators.size, totalRooms:rooms.size,
@@ -178,6 +193,16 @@ app.post('/api/admin/clear-room', modAuth, (req,res) => {
   if(!room) return res.status(404).json({error:'Room not found'});
   room.messages=[];
   io.to(req.body.roomId).emit('room_cleared');
+  res.json({success:true});
+});
+
+app.post('/api/admin/delete-room', adminAuth, (req,res) => {
+  const roomId=req.body.roomId;
+  if(roomId==='general') return res.status(403).json({error:'General chat cannot be deleted'});
+  if(!rooms.has(roomId)) return res.status(404).json({error:'Room not found'});
+  io.to(roomId).emit('room_deleted',{roomId});
+  rooms.delete(roomId);
+  io.emit('rooms_updated');
   res.json({success:true});
 });
 
