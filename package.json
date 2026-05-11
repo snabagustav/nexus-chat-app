@@ -1,7 +1,7 @@
 {
-  "name": "nexus-chat-app",
-  "version": "6.1.0",
-  "description": "Nexus Chat App: chat, rooms, calls, games, themes and admin",
+  "name": "nexus-mega-complete",
+  "version": "7.0.0",
+  "description": "Nexus Chat App mega build with persistent chat, calls, games, friends, DMs, admin and themes",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

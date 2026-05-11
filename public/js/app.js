@@ -1,103 +1,60 @@
 const $ = id => document.getElementById(id);
 
-const els = {
-  authScreen: $('auth-screen'),
-  appScreen: $('app-screen'),
-  authError: $('auth-error'),
-  sidebarName: $('sidebar-name'),
-  sidebarAvatar: $('sidebar-avatar'),
-  profilePictureInput: $('profile-picture-input'),
-  btnProfilePicture: $('btn-profile-picture'),
-  roomList: $('room-list'),
-  currentRoomTitle: $('current-room-title'),
-  roomMemberCount: $('room-member-count'),
-  messagesArea: $('messages-area'),
-  membersList: $('members-list'),
-  messageForm: $('message-form'),
-  messageInput: $('message-input'),
-  btnSend: $('btn-send'),
-  typing: $('typing-indicator'),
-  callArea: $('call-area'),
-  videoGrid: $('video-grid'),
-  localVideo: $('local-video'),
-  btnJoinCall: $('btn-join-call'),
-  gamesView: $('games-view'),
-  chatView: $('chat-view'),
-  gameArea: $('game-area'),
-  gamesLobby: $('games-lobby'),
-  callStatus: $('call-status'),
-  localPicture: $('local-picture'),
+const state = {
+  token: localStorage.getItem('nexus_token') || '',
+  user: readJson(localStorage.getItem('nexus_user')),
+  rooms: [],
+  friends: [],
+  requests: [],
+  dms: [],
+  presence: [],
+  currentRoom: 'general',
+  currentDm: '',
+  currentGame: null,
+  socket: null,
+  attachment: null,
+  localStream: null,
+  screenStream: null,
+  callId: '',
+  peers: {},
+  micOn: true,
+  camOn: false,
+  deafened: false,
+  pushToTalk: false,
 };
-
-let token = localStorage.getItem('nexus_token') || '';
-let currentUser = readJson(localStorage.getItem('nexus_user'));
-let socket = null;
-let rooms = [];
-let currentRoomId = '';
-let currentMessages = [];
-let currentGame = null;
-let typingTimer = null;
-
-let localStream = null;
-let screenStream = null;
-let currentCallId = '';
-let peers = {};
-let micEnabled = true;
-let camEnabled = false;
-let deafened = false;
 
 const iceServers = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
 function readJson(value) {
   try { return value ? JSON.parse(value) : null; } catch { return null; }
 }
 
-function escapeText(value) {
-  return String(value || '').replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[char]));
+function esc(value) {
+  return String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
-function safePictureSrc(picture) {
-  const value = String(picture || '').trim();
-  if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=]+$/i.test(value)) return value;
-  if (/^https?:\/\/[^\s"'<>]+$/i.test(value)) return value;
+function safePic(value) {
+  const pic = String(value || '');
+  if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=]+$/i.test(pic)) return pic;
+  if (/^https?:\/\/[^\s"'<>]+$/i.test(pic)) return pic;
   return '';
 }
 
-function avatarMarkup(user, className = 'avatar') {
-  const picture = safePictureSrc(user?.picture);
-  const fallback = escapeText(user?.avatar || (user?.username || '?')[0].toUpperCase());
-  if (picture) return `<span class="${className} has-picture"><img src="${escapeText(picture)}" alt=""></span>`;
-  return `<span class="${className}">${fallback}</span>`;
+function avatar(user, cls = 'avatar') {
+  const pic = safePic(user?.picture);
+  const letter = esc(user?.avatar || (user?.username || '?')[0].toUpperCase());
+  return `<span class="${cls}">${pic ? `<img src="${esc(pic)}" alt="">` : letter}</span>`;
 }
 
-function setAvatarButton(button, user) {
-  const picture = safePictureSrc(user?.picture);
-  button.innerHTML = picture ? `<img src="${escapeText(picture)}" alt="">` : escapeText(user?.avatar || (user?.username || 'U')[0].toUpperCase());
-  button.classList.toggle('has-picture', !!picture);
-}
-
-function setAuthError(message) {
-  els.authError.textContent = message || '';
-  els.authError.classList.toggle('hidden', !message);
+function showError(message) {
+  const el = $('auth-error');
+  el.textContent = message || '';
+  el.classList.toggle('hidden', !message);
 }
 
 function toast(message) {
@@ -107,776 +64,741 @@ function toast(message) {
 async function request(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
   const res = await fetch(path, { ...options, headers });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Something went wrong');
+  if (!res.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
 
 function saveSession(data) {
-  token = data.token || token;
-  currentUser = data.user || currentUser;
-  localStorage.setItem('nexus_token', token);
-  localStorage.setItem('nexus_user', JSON.stringify(currentUser));
+  if (data.token) state.token = data.token;
+  if (data.user) state.user = data.user;
+  localStorage.setItem('nexus_token', state.token);
+  localStorage.setItem('nexus_user', JSON.stringify(state.user));
 }
 
 function logout() {
-  if (socket) socket.disconnect();
-  token = '';
-  currentUser = null;
+  if (state.socket) state.socket.disconnect();
   localStorage.removeItem('nexus_token');
   localStorage.removeItem('nexus_user');
-  currentRoomId = '';
-  showScreen(false);
+  state.token = '';
+  state.user = null;
+  $('app-screen').classList.remove('active');
+  $('auth-screen').classList.add('active');
 }
 
-function showScreen(loggedIn) {
-  els.authScreen.classList.toggle('active', !loggedIn);
-  els.appScreen.classList.toggle('active', loggedIn);
-}
-
-function applyTheme(theme) {
-  const nextTheme = theme || localStorage.getItem('nexus_theme') || currentUser?.theme || 'midnight';
-  document.body.dataset.theme = nextTheme;
-  localStorage.setItem('nexus_theme', nextTheme);
-  if (currentUser) {
-    currentUser.theme = nextTheme;
-    localStorage.setItem('nexus_user', JSON.stringify(currentUser));
-    request('/api/user/theme', {
-      method: 'POST',
-      body: JSON.stringify({ theme: nextTheme }),
-    }).catch(() => {});
-  }
-}
-
-function updateUserUi() {
-  if (!currentUser) return;
-  els.sidebarName.textContent = currentUser.username || 'User';
-  setAvatarButton(els.sidebarAvatar, currentUser);
-  if (els.localPicture) {
-    const picture = safePictureSrc(currentUser.picture);
-    els.localPicture.src = picture;
-    els.localPicture.classList.toggle('hidden', !picture);
-  }
-  $('local-label').textContent = currentUser.username || 'You';
-  applyTheme(currentUser.theme);
-}
-
-async function handleAuth(path, body) {
-  setAuthError('');
+async function auth(path, body) {
+  showError('');
   try {
     const data = await request(path, { method: 'POST', body: JSON.stringify(body) });
     saveSession(data);
     await startApp();
   } catch (err) {
-    setAuthError(err.message);
+    showError(err.message);
   }
 }
 
-window.handleGoogleSignIn = async response => {
+window.handleGoogleSignIn = response => {
   try {
     let encoded = response.credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
     encoded += '='.repeat((4 - encoded.length % 4) % 4);
     const payload = JSON.parse(atob(encoded));
-    await handleAuth('/api/auth/google', {
-      email: payload.email,
-      name: payload.name || payload.email,
-      picture: payload.picture,
-      googleId: payload.sub,
-    });
+    auth('/api/auth/google', { email: payload.email, name: payload.name, picture: payload.picture, googleId: payload.sub });
   } catch {
-    setAuthError('Google login failed');
+    showError('Google login failed');
   }
 };
 
 function bindAuth() {
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(item => item.classList.remove('active'));
-      document.querySelectorAll('.auth-form').forEach(item => item.classList.remove('active'));
-      tab.classList.add('active');
-      $(`tab-${tab.dataset.tab}`).classList.add('active');
-    });
-  });
-
-  $('btn-login').addEventListener('click', () => handleAuth('/api/auth/login', {
-    email: $('login-email').value,
-    password: $('login-password').value,
+  document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(item => item.classList.remove('active'));
+    document.querySelectorAll('.auth-form').forEach(item => item.classList.remove('active'));
+    tab.classList.add('active');
+    $(`tab-${tab.dataset.tab}`).classList.add('active');
   }));
-
-  $('btn-register').addEventListener('click', () => handleAuth('/api/auth/register', {
-    username: $('reg-username').value,
-    email: $('reg-email').value,
-    password: $('reg-password').value,
-  }));
-
+  $('btn-login').addEventListener('click', () => auth('/api/auth/login', { email: $('login-email').value, password: $('login-password').value }));
+  $('btn-register').addEventListener('click', () => auth('/api/auth/register', { username: $('reg-username').value, email: $('reg-email').value, password: $('reg-password').value }));
   $('btn-anon-toggle').addEventListener('click', () => $('anon-form').classList.toggle('hidden'));
-  $('btn-anon').addEventListener('click', () => handleAuth('/api/auth/anonymous', {
-    username: $('anon-name').value,
-  }));
+  $('btn-anon').addEventListener('click', () => auth('/api/auth/anonymous', { username: $('anon-name').value }));
+  $('btn-google').addEventListener('click', () => window.google?.accounts?.id ? google.accounts.id.prompt() : showError('Google is still loading'));
+}
 
-  $('btn-google').addEventListener('click', () => {
-    if (window.google?.accounts?.id) {
-      google.accounts.id.prompt();
-    } else {
-      setAuthError('Google is still loading. Try again in a second.');
-    }
-  });
+async function startApp() {
+  $('auth-screen').classList.remove('active');
+  $('app-screen').classList.add('active');
+  connectSocket();
+  await bootstrap();
+}
+
+async function bootstrap() {
+  const data = await request('/api/bootstrap');
+  state.user = data.user;
+  state.rooms = data.rooms;
+  state.friends = data.friends;
+  state.requests = data.requests || [];
+  state.dms = data.dmThreads;
+  state.presence = data.onlineUsers;
+  localStorage.setItem('nexus_user', JSON.stringify(state.user));
+  applyProfileUi();
+  renderRooms();
+  renderDms();
+  renderFriends();
+  joinRoom(state.currentRoom || 'general');
+}
+
+function applyProfileUi() {
+  document.body.dataset.theme = state.user?.theme || 'midnight';
+  document.documentElement.style.setProperty('--accent', state.user?.accent || '#5865f2');
+  $('me-name').textContent = state.user?.username || 'User';
+  $('me-status').textContent = state.user?.status || 'Online';
+  $('btn-profile-picture').innerHTML = safePic(state.user?.picture) ? `<img src="${esc(state.user.picture)}" alt="">` : esc(state.user?.avatar || '?');
+  $('local-call-name').textContent = state.user?.username || 'You';
+  $('local-call-picture').src = safePic(state.user?.picture);
+  $('profile-name').value = state.user?.username || '';
+  $('profile-status').value = state.user?.status || '';
+  $('profile-bio').value = state.user?.bio || '';
+  $('profile-banner-input').value = state.user?.banner || '';
+  $('profile-accent').value = state.user?.accent || '#5865f2';
+  $('profile-theme').value = state.user?.theme || 'midnight';
+  renderProfilePreview();
 }
 
 function connectSocket() {
-  if (socket) socket.disconnect();
-  socket = io({
-    auth: { token },
-    transports: ['polling'],
-    upgrade: false,
-    reconnection: true,
-    reconnectionAttempts: 20,
-    timeout: 20000,
+  if (state.socket) state.socket.disconnect();
+  state.socket = io({ auth: { token: state.token }, transports: ['polling'], upgrade: false, reconnection: true });
+  const s = state.socket;
+  s.on('connect_error', err => {
+    if (/unauthorized/i.test(err.message || '')) logout();
+    else toast(err.message);
   });
-
-  socket.on('connect_error', err => {
-    if (/unauthorized/i.test(err.message || '')) {
-      logout();
-      setAuthError('Session expired after deploy. Log in again.');
-      return;
-    }
-    toast(err.message || 'Connection failed');
+  s.on('rooms_updated', async () => {
+    state.rooms = await request('/api/rooms');
+    renderRooms();
   });
-  socket.on('online_count', count => {
-    if (!currentRoomId) els.roomMemberCount.textContent = `${count} online`;
+  s.on('online_count', count => $('room-subtitle').textContent = `${count} online`);
+  s.on('presence', users => {
+    state.presence = users;
+    renderFriends();
   });
-  socket.on('rooms_updated', loadRooms);
-  socket.on('room_created', room => {
-    loadRooms().then(() => joinRoom(room.id, room.name));
-    if (room.private) copyText(room.id, `Private room ID: ${room.id}`);
+  s.on('room_history', renderMessages);
+  s.on('new_message', msg => appendMessage(msg));
+  s.on('message_deleted', data => document.querySelector(`[data-message-id="${data.messageId}"]`)?.remove());
+  s.on('message_reactions', data => updateReactions(data.messageId, data.reactions));
+  s.on('room_cleared', () => $('messages').innerHTML = empty('Room cleared'));
+  s.on('room_members', members => $('room-subtitle').textContent = `${members.length} in room`);
+  s.on('user_typing', data => {
+    $('typing').textContent = data.typing ? `${data.username} is typing...` : '';
+    $('typing').classList.toggle('hidden', !data.typing);
   });
-  socket.on('room_history', messages => {
-    currentMessages = messages || [];
-    renderMessages();
-  });
-  socket.on('new_message', message => {
-    currentMessages.push(message);
-    renderMessage(message);
-    els.messagesArea.scrollTop = els.messagesArea.scrollHeight;
-  });
-  socket.on('message_deleted', data => {
-    currentMessages = currentMessages.filter(message => message.id !== data.messageId);
-    const node = document.querySelector(`[data-message-id="${data.messageId}"]`);
-    if (node) node.remove();
-  });
-  socket.on('room_cleared', () => {
-    currentMessages = [];
-    renderMessages();
-  });
-  socket.on('room_members', renderMembers);
-  socket.on('user_typing', data => {
-    els.typing.textContent = data.typing ? `${data.username} is typing...` : '';
-    els.typing.classList.toggle('hidden', !data.typing);
-  });
-  socket.on('error_msg', toast);
-  socket.on('force_logout', data => {
+  s.on('error_msg', toast);
+  s.on('force_logout', data => {
     toast(data.reason || 'Logged out');
     logout();
   });
-
-  socket.on('call_existing_peers', async data => {
-    currentCallId = data.callId || currentCallId;
-    for (const peer of data.peers || []) {
-      const info = normalizePeer(peer);
-      await createPeer(info.peerId, info, true);
-    }
+  s.on('notify', data => notify(data));
+  s.on('friend_request', async () => {
+    const next = await request('/api/friends');
+    state.friends = next.friends;
+    state.requests = next.requests;
+    renderFriends();
+    notify({ type: 'friend', from: 'Nexus', content: 'New friend request' });
   });
-  socket.on('call_peer_joined', data => {
-    const info = normalizePeer(data);
-    addRemoteTile(info.peerId, info);
-    createPeer(info.peerId, info, false).catch(console.error);
+  s.on('dm_history', data => renderDmMessages(data.messages));
+  s.on('new_dm', msg => appendDmMessage(msg));
+  s.on('call_existing_peers', async data => {
+    state.callId = data.callId;
+    for (const peer of data.peers || []) await createPeer(peer.peerId, peer, true);
+    updateCallStatus();
   });
-  socket.on('call_offer', async data => {
-    const info = normalizePeer({ peerId: data.from, username: data.username, avatar: data.avatar, picture: data.picture });
-    const pc = await createPeer(data.from, info, false);
+  s.on('call_peer_joined', data => createPeer(data.peerId, data, false));
+  s.on('call_offer', async data => {
+    const pc = await createPeer(data.from, data, false);
     await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    socket.emit('call_answer', { to: data.from, answer });
+    s.emit('call_answer', { to: data.from, answer });
   });
-  socket.on('call_answer', async data => {
-    const pc = peers[data.from]?.pc;
+  s.on('call_answer', async data => {
+    const pc = state.peers[data.from]?.pc;
     if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
   });
-  socket.on('call_ice', async data => {
-    const pc = peers[data.from]?.pc;
-    if (pc && data.candidate) {
-      try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch {}
-    }
+  s.on('call_ice', async data => {
+    const pc = state.peers[data.from]?.pc;
+    if (pc && data.candidate) try { await pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch {}
   });
-  socket.on('call_peer_left', data => removePeer(data.peerId));
-
-  socket.on('game_created', data => renderGame(data.game));
-  socket.on('game_updated', renderGame);
-  socket.on('game_error', toast);
+  s.on('call_peer_left', data => removePeer(data.peerId));
+  s.on('game_created', game => renderGame(game));
+  s.on('game_updated', game => renderGame(game));
+  s.on('game_error', toast);
 }
 
-function normalizePeer(peer) {
-  if (typeof peer === 'string') return { peerId: peer, username: 'User', avatar: '?' };
-  return {
-    peerId: peer.peerId || peer.id,
-    username: peer.username || 'User',
-    avatar: peer.avatar || '?',
-    picture: peer.picture || '',
-  };
-}
-
-async function loadRooms() {
-  try {
-    rooms = await request('/api/rooms');
-    renderRooms();
-  } catch (err) {
-    toast(err.message);
-  }
+function empty(text) {
+  return `<div class="empty"><h2>${esc(text)}</h2><p>Nexus is ready.</p></div>`;
 }
 
 function renderRooms() {
-  els.roomList.innerHTML = '';
-  rooms.forEach(room => {
-    const button = document.createElement('button');
-    button.className = `room-btn ${room.id === currentRoomId ? 'active' : ''}`;
-    button.textContent = `# ${room.name}`;
-    button.addEventListener('click', () => joinRoom(room.id, room.name));
-    els.roomList.appendChild(button);
-  });
+  $('room-list').innerHTML = state.rooms.map(room => `<button class="${room.id === state.currentRoom ? 'active' : ''}" data-room="${room.id}"># ${esc(room.name)}${room.private ? ' 🔒' : ''}</button>`).join('');
+  document.querySelectorAll('[data-room]').forEach(btn => btn.addEventListener('click', () => joinRoom(btn.dataset.room)));
 }
 
-function joinRoom(roomId, roomName) {
-  if (!socket || !roomId) return;
-  currentRoomId = roomId;
-  const room = rooms.find(item => item.id === roomId);
-  els.currentRoomTitle.textContent = roomName || room?.name || roomId;
-  els.roomMemberCount.textContent = 'Loading room...';
-  els.messageInput.disabled = false;
-  els.btnSend.disabled = false;
-  els.messageInput.placeholder = `Message #${els.currentRoomTitle.textContent}`;
-  socket.emit('join_room', roomId);
+function joinRoom(id) {
+  const room = state.rooms.find(item => item.id === id) || { id, name: id };
+  state.currentRoom = id;
+  $('room-title').textContent = `# ${room.name}`;
+  $('message-input').placeholder = `Message #${room.name}`;
+  state.socket.emit('join_room', id);
   renderRooms();
+  showView('chat');
 }
 
-function renderMembers(members) {
-  els.roomMemberCount.textContent = `${members.length} online in room`;
-  els.membersList.innerHTML = '';
-  members.forEach(member => {
-    const row = document.createElement('div');
-    row.className = 'member';
-    row.innerHTML = `${avatarMarkup(member)}<div><b>${escapeText(member.username)}</b><br><small>${escapeText(member.role || 'user')}</small></div>`;
-    els.membersList.appendChild(row);
-  });
+function renderMessages(messages) {
+  $('messages').innerHTML = messages.length ? '' : empty('No messages yet');
+  messages.forEach(appendMessage);
+  $('messages').scrollTop = $('messages').scrollHeight;
 }
 
-function renderMessages() {
-  els.messagesArea.innerHTML = '';
-  if (!currentMessages.length) {
-    els.messagesArea.innerHTML = '<div class="empty-state"><div class="empty-icon">#</div><h2>No messages yet</h2><p>Start the room.</p></div>';
-    return;
-  }
-  currentMessages.forEach(renderMessage);
-  els.messagesArea.scrollTop = els.messagesArea.scrollHeight;
+function appendMessage(msg) {
+  const wrap = $('messages');
+  const row = document.createElement('article');
+  row.className = `message ${msg.mentions?.includes(state.user.id) ? 'mention' : ''}`;
+  row.dataset.messageId = msg.id;
+  row.innerHTML = `
+    ${avatar(msg, 'msg-avatar')}
+    <div>
+      <div><span class="msg-name">${esc(msg.username)}</span><span class="msg-time">${new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
+      <div>${linkMentions(esc(msg.content || ''))}</div>
+      ${attachmentHtml(msg.attachment)}
+      <div class="reactions" data-reactions></div>
+      <div class="reactions">
+        ${['💜','😂','🔥','👍','💀'].map(e => `<button class="react-btn" data-react="${e}">${e}</button>`).join('')}
+      </div>
+    </div>
+    <button class="delete-msg">Delete</button>
+  `;
+  row.querySelectorAll('[data-react]').forEach(btn => btn.addEventListener('click', () => state.socket.emit('react_message', { messageId: msg.id, emoji: btn.dataset.react })));
+  row.querySelector('.delete-msg').addEventListener('click', () => state.socket.emit('delete_message', { messageId: msg.id }));
+  wrap.appendChild(row);
+  updateReactions(msg.id, msg.reactions || {});
+  wrap.scrollTop = wrap.scrollHeight;
 }
 
-function renderMessage(message) {
-  const empty = els.messagesArea.querySelector('.empty-state');
-  if (empty) empty.remove();
+function linkMentions(text) {
+  return text.replace(/@([a-z0-9_.-]{2,32})/gi, '<b>@$1</b>');
+}
+
+function attachmentHtml(file) {
+  if (!file) return '';
+  if (file.type?.startsWith('image/')) return `<div class="attachment"><img src="${esc(file.data)}" alt="${esc(file.name)}"></div>`;
+  if (file.type?.startsWith('video/')) return `<div class="attachment"><video src="${esc(file.data)}" controls></video></div>`;
+  return `<div class="attachment"><a href="${esc(file.data)}" download="${esc(file.name)}">${esc(file.name)}</a></div>`;
+}
+
+function updateReactions(messageId, reactions) {
+  const box = document.querySelector(`[data-message-id="${messageId}"] [data-reactions]`);
+  if (!box) return;
+  box.innerHTML = Object.entries(reactions || {}).filter(([, ids]) => ids.length).map(([emoji, ids]) => `<span class="reaction">${emoji} ${ids.length}</span>`).join('');
+}
+
+function renderDms() {
+  $('dm-list').innerHTML = state.dms.map(dm => `<button data-dm="${dm.id}">${avatar(dm.other)} ${esc(dm.other?.username || 'DM')}</button>`).join('');
+  document.querySelectorAll('[data-dm]').forEach(btn => btn.addEventListener('click', () => openDm(btn.dataset.dm)));
+}
+
+function openDm(id) {
+  state.currentDm = id;
+  const dm = state.dms.find(item => item.id === id);
+  $('dm-title').textContent = dm?.other?.username || 'Direct Message';
+  state.socket.emit('join_dm', id);
+  showView('dm');
+}
+
+function renderDmMessages(messages) {
+  $('dm-messages').innerHTML = messages.length ? '' : empty('No DMs yet');
+  messages.forEach(appendDmMessage);
+}
+
+function appendDmMessage(msg) {
   const row = document.createElement('article');
   row.className = 'message';
-  row.dataset.messageId = message.id;
-
-  const avatar = document.createElement('div');
-  avatar.className = 'msg-avatar';
-  if (message.picture) {
-    const picture = safePictureSrc(message.picture);
-    if (picture) {
-      avatar.classList.add('has-picture');
-      avatar.innerHTML = `<img src="${escapeText(picture)}" alt="">`;
-    } else {
-      avatar.textContent = message.avatar || '?';
-    }
-  } else {
-    avatar.textContent = message.avatar || '?';
-  }
-
-  const body = document.createElement('div');
-  const top = document.createElement('div');
-  const name = document.createElement('span');
-  name.className = 'msg-name';
-  name.textContent = message.username || 'User';
-  const time = document.createElement('span');
-  time.className = 'msg-time';
-  time.textContent = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const content = document.createElement('div');
-  content.textContent = message.content || '';
-  top.append(name, time);
-  body.append(top, content);
-
-  row.append(avatar, body);
-  if (currentUser && ['admin', 'moderator'].includes(currentUser.role)) {
-    const del = document.createElement('button');
-    del.className = 'delete-msg';
-    del.textContent = 'Delete';
-    del.addEventListener('click', () => socket.emit('mod_delete_message', {
-      roomId: currentRoomId,
-      messageId: message.id,
-    }));
-    row.appendChild(del);
-  }
-  els.messagesArea.appendChild(row);
+  row.innerHTML = `${avatar(msg, 'msg-avatar')}<div><b>${esc(msg.username)}</b><span class="msg-time">${new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span><div>${esc(msg.content)}</div></div>`;
+  $('dm-messages').appendChild(row);
+  $('dm-messages').scrollTop = $('dm-messages').scrollHeight;
 }
 
-function bindChat() {
-  els.messageForm.addEventListener('submit', event => {
-    event.preventDefault();
-    const content = els.messageInput.value.trim();
-    if (!content || !currentRoomId) return;
-    socket.emit('send_message', { roomId: currentRoomId, content });
-    els.messageInput.value = '';
-    socket.emit('typing', { roomId: currentRoomId, typing: false });
-  });
+function renderFriends() {
+  $('friends-list').innerHTML = state.friends.map(friend => `<div class="item-row">${avatar(friend)}<div><b>${esc(friend.username)}</b><small>${esc(friend.status || 'Online')}</small></div><button class="mini" data-start-dm="${friend.id}">DM</button></div>`).join('') || '<p>No friends yet.</p>';
+  $('friend-requests').innerHTML = (state.requests || []).map(req => `<div class="item-row">${avatar(req.fromUser)}<b>${esc(req.fromUser.username)}</b><button class="mini good" data-accept="${req.id}">Accept</button><button class="mini" data-reject="${req.id}">Reject</button></div>`).join('') || '<p>No requests.</p>';
+  $('presence-list').innerHTML = (state.presence || []).map(user => `<div class="item-row">${avatar(user)}<div><b>${esc(user.username)}</b><small>${esc(user.status || 'Online')}</small></div></div>`).join('');
+  document.querySelectorAll('[data-start-dm]').forEach(btn => btn.addEventListener('click', () => startDm(btn.dataset.startDm)));
+  document.querySelectorAll('[data-accept]').forEach(btn => btn.addEventListener('click', () => respondFriend(btn.dataset.accept, true)));
+  document.querySelectorAll('[data-reject]').forEach(btn => btn.addEventListener('click', () => respondFriend(btn.dataset.reject, false)));
+}
 
-  els.messageInput.addEventListener('input', () => {
-    if (!currentRoomId || !socket) return;
-    socket.emit('typing', { roomId: currentRoomId, typing: true });
+async function startDm(userId) {
+  const dm = await request('/api/dm/start', { method: 'POST', body: JSON.stringify({ userId }) });
+  if (!state.dms.some(item => item.id === dm.id)) state.dms.push(dm);
+  renderDms();
+  openDm(dm.id);
+}
+
+async function respondFriend(requestId, accept) {
+  const data = await request('/api/friends/respond', { method: 'POST', body: JSON.stringify({ requestId, accept }) });
+  state.friends = data.friends;
+  state.requests = data.requests;
+  renderFriends();
+}
+
+function showView(view) {
+  document.querySelectorAll('.view').forEach(item => item.classList.remove('active'));
+  $(`view-${view}`).classList.add('active');
+  document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item.dataset.view === view));
+}
+
+function bindUi() {
+  document.querySelectorAll('.nav[data-view]').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view)));
+  $('btn-logout').addEventListener('click', logout);
+  $('message-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const content = $('message-input').value.trim();
+    state.socket.emit('send_message', { roomId: state.currentRoom, content, attachment: state.attachment });
+    $('message-input').value = '';
+    state.attachment = null;
+  });
+  $('dm-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const content = $('dm-input').value.trim();
+    if (!content || !state.currentDm) return;
+    state.socket.emit('send_dm', { dmId: state.currentDm, content });
+    $('dm-input').value = '';
+  });
+  let typingTimer = null;
+  $('message-input').addEventListener('input', () => {
+    state.socket.emit('typing', { roomId: state.currentRoom, typing: true });
     clearTimeout(typingTimer);
-    typingTimer = setTimeout(() => socket.emit('typing', { roomId: currentRoomId, typing: false }), 900);
+    typingTimer = setTimeout(() => state.socket.emit('typing', { roomId: state.currentRoom, typing: false }), 900);
   });
-
+  $('btn-attach').addEventListener('click', () => $('attachment-input').click());
+  $('attachment-input').addEventListener('change', async () => {
+    const file = $('attachment-input').files[0];
+    $('attachment-input').value = '';
+    if (!file) return;
+    if (file.size > 700000) return toast('File too large. Keep it under about 700 KB.');
+    state.attachment = { name: file.name, type: file.type, size: file.size, data: await fileToDataUrl(file) };
+    toast(`Attached ${file.name}`);
+  });
   $('btn-new-room').addEventListener('click', () => $('room-modal').classList.remove('hidden'));
   $('btn-room-cancel').addEventListener('click', () => $('room-modal').classList.add('hidden'));
-  $('btn-room-create').addEventListener('click', () => {
-    const name = $('room-name').value.trim();
-    if (!name) return;
-    socket.emit('create_room', { name, private: $('room-private').checked });
-    $('room-name').value = '';
-    $('room-private').checked = false;
-    $('room-modal').classList.add('hidden');
-  });
-  $('btn-join-private').addEventListener('click', () => {
-    const id = $('private-room-id').value.trim();
-    if (id) joinRoom(id, `Private ${id}`);
-  });
-}
-
-async function startCall(callId = 'general') {
-  if (currentCallId) return leaveCall();
-  currentCallId = callId;
-  els.callArea.classList.remove('hidden');
-  document.body.classList.add('in-call');
-  els.callStatus.textContent = 'Connecting...';
-  els.btnJoinCall.innerHTML = '<span></span>Leave General Call';
-  $('btn-toggle-cam').classList.add('off');
-  $('btn-toggle-mic').classList.remove('off');
-  $('btn-deafen').classList.remove('off');
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  } catch {
-    localStream = new MediaStream();
-    toast('Microphone was blocked, but you can still join and listen.');
-  }
-  els.localVideo.srcObject = localStream;
-  micEnabled = true;
-  socket.emit('call_join', { callId });
-  updateCallStatus();
-}
-
-function leaveCall() {
-  Object.values(peers).forEach(peer => peer.pc.close());
-  peers = {};
-  document.querySelectorAll('.call-avatar-tile.remote').forEach(tile => tile.remove());
-  if (localStream) localStream.getTracks().forEach(track => track.stop());
-  if (screenStream) screenStream.getTracks().forEach(track => track.stop());
-  localStream = null;
-  screenStream = null;
-  socket.emit('call_leave', { callId: currentCallId });
-  currentCallId = '';
-  els.callArea.classList.add('hidden');
-  document.querySelector('.call-avatar-tile.local')?.classList.remove('has-video');
-  document.body.classList.remove('in-call');
-  els.btnJoinCall.innerHTML = '<span></span>Join General Call';
-  $('btn-toggle-cam').classList.remove('active', 'off');
-  $('btn-share-screen').classList.remove('active');
-  $('btn-toggle-mic').classList.remove('off');
-  $('btn-deafen').classList.remove('off');
-}
-
-async function createPeer(peerId, info, initiator) {
-  if (peers[peerId]) return peers[peerId].pc;
-  addRemoteTile(peerId, info);
-  const pc = new RTCPeerConnection({ iceServers });
-  peers[peerId] = { pc, stream: new MediaStream(), info };
-
-  if (localStream) localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-  if (screenStream) screenStream.getTracks().forEach(track => pc.addTrack(track, screenStream));
-
-  pc.ontrack = event => {
-    const remote = peers[peerId];
-    if (!remote) return;
-    event.streams[0].getTracks().forEach(track => remote.stream.addTrack(track));
-    if (event.track.kind === 'video') $(`remote-tile-${peerId}`)?.classList.add('has-video');
-    const video = $(`remote-video-${peerId}`);
-    if (video) {
-      video.srcObject = remote.stream;
-      video.muted = deafened;
-    }
-  };
-  pc.onicecandidate = event => {
-    if (event.candidate) socket.emit('call_ice', { to: peerId, candidate: event.candidate });
-  };
-  pc.onconnectionstatechange = () => {
-    const tile = $(`remote-tile-${peerId}`);
-    if (tile) tile.classList.toggle('local', pc.connectionState === 'connected');
-  };
-
-  if (initiator) await sendOffer(peerId);
-  return pc;
-}
-
-async function sendOffer(peerId) {
-  const pc = peers[peerId]?.pc;
-  if (!pc) return;
-  const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-  await pc.setLocalDescription(offer);
-  socket.emit('call_offer', { to: peerId, offer });
-}
-
-function addRemoteTile(peerId, info) {
-  if ($(`remote-tile-${peerId}`)) return;
-  const tile = document.createElement('div');
-  tile.id = `remote-tile-${peerId}`;
-  tile.className = 'call-avatar-tile remote';
-  const picture = document.createElement('img');
-  const pictureSrc = safePictureSrc(info.picture);
-  picture.className = `call-picture ${pictureSrc ? '' : 'hidden'}`;
-  picture.alt = '';
-  picture.src = pictureSrc;
-  const video = document.createElement('video');
-  video.id = `remote-video-${peerId}`;
-  video.autoplay = true;
-  video.playsInline = true;
-  const label = document.createElement('span');
-  label.textContent = info.username || 'User';
-  tile.title = info.username || 'User';
-  tile.append(picture, video, label);
-  els.videoGrid.appendChild(tile);
-  updateCallStatus();
-}
-
-function removePeer(peerId) {
-  if (peers[peerId]) {
-    peers[peerId].pc.close();
-    delete peers[peerId];
-  }
-  const tile = $(`remote-tile-${peerId}`);
-  if (tile) tile.remove();
-  updateCallStatus();
-}
-
-function updateCallStatus() {
-  if (!els.callStatus || !currentCallId) return;
-  const count = Object.keys(peers).length + 1;
-  els.callStatus.textContent = `${count} connected - voice channel`;
-}
-
-async function toggleCamera() {
-  if (!currentCallId) return;
-  const existing = localStream?.getVideoTracks()[0];
-  if (existing) {
-    existing.enabled = !existing.enabled;
-    camEnabled = existing.enabled;
-    document.querySelector('.call-avatar-tile.local')?.classList.toggle('has-video', camEnabled);
-  } else {
-    const cam = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    const track = cam.getVideoTracks()[0];
-    localStream.addTrack(track);
-    els.localVideo.srcObject = localStream;
-    camEnabled = true;
-    document.querySelector('.call-avatar-tile.local')?.classList.add('has-video');
-    for (const peerId of Object.keys(peers)) {
-      peers[peerId].pc.addTrack(track, localStream);
-      await sendOffer(peerId);
-    }
-  }
-  $('btn-toggle-cam').classList.toggle('active', camEnabled);
-  $('btn-toggle-cam').classList.toggle('off', !camEnabled);
-}
-
-function toggleMic() {
-  if (!localStream) return;
-  micEnabled = !micEnabled;
-  localStream.getAudioTracks().forEach(track => { track.enabled = micEnabled; });
-  $('btn-toggle-mic').classList.toggle('off', !micEnabled);
-  $('btn-toggle-mic').title = micEnabled ? 'Mute' : 'Unmute';
-}
-
-function toggleDeafen() {
-  deafened = !deafened;
-  document.querySelectorAll('.call-avatar-tile.remote video').forEach(video => { video.muted = deafened; });
-  $('btn-deafen').classList.toggle('off', deafened);
-  $('btn-deafen').title = deafened ? 'Undeafen' : 'Deafen';
-}
-
-async function shareScreen() {
-  if (!currentCallId) return;
-  try {
-    if (screenStream) {
-      screenStream.getTracks().forEach(track => track.stop());
-      screenStream = null;
-      $('btn-share-screen').classList.remove('active');
-      return;
-    }
-    screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-    const track = screenStream.getVideoTracks()[0];
-    els.localVideo.srcObject = screenStream;
-    document.querySelector('.call-avatar-tile.local')?.classList.add('has-video');
-    $('btn-share-screen').classList.add('active');
-    track.onended = () => {
-      screenStream = null;
-      els.localVideo.srcObject = localStream;
-      document.querySelector('.call-avatar-tile.local')?.classList.toggle('has-video', !!localStream?.getVideoTracks().some(track => track.enabled));
-      $('btn-share-screen').classList.remove('active');
-    };
-    for (const peerId of Object.keys(peers)) {
-      peers[peerId].pc.addTrack(track, screenStream);
-      await sendOffer(peerId);
-    }
-  } catch {}
-}
-
-function bindCall() {
-  els.btnJoinCall.addEventListener('click', () => startCall('general'));
-  $('btn-leave-call').addEventListener('click', leaveCall);
-  $('btn-toggle-mic').addEventListener('click', toggleMic);
-  $('btn-toggle-cam').addEventListener('click', () => toggleCamera().catch(() => toast('Camera blocked')));
-  $('btn-deafen').addEventListener('click', toggleDeafen);
-  $('btn-share-screen').addEventListener('click', shareScreen);
-  $('btn-copy-call-id').addEventListener('click', () => copyText(location.href, 'Invite link copied'));
-}
-
-function renderGame(game) {
-  currentGame = game;
-  els.gameArea.classList.remove('hidden');
-  els.gameArea.innerHTML = '';
-  const header = document.createElement('div');
-  header.className = 'active-card';
-  const status = game.status === 'waiting' ? 'Waiting for another player' : game.status === 'ended' ? winnerText(game) : `Turn: ${game.players[game.turn % 2]?.username || 'Player'}`;
-  header.innerHTML = `<b>${escapeText(game.type.toUpperCase())}</b><p>ID: ${escapeText(game.id)} - ${escapeText(status)}</p>`;
-  const copy = document.createElement('button');
-  copy.className = 'btn primary';
-  copy.textContent = 'Copy ID';
-  copy.addEventListener('click', () => copyText(game.id, `Game ID copied: ${game.id}`));
-  header.appendChild(copy);
-  els.gameArea.appendChild(header);
-
-  if (game.type === 'connect4') renderConnect4(game);
-  else if (game.type === 'rps') renderRps(game);
-  else if (game.type === 'memory') renderMemory(game);
-  else renderTtt(game);
-}
-
-function winnerText(game) {
-  if (game.winner === 'draw') return 'Draw';
-  return `Winner: ${game.players[game.winner]?.username || 'Player'}`;
-}
-
-function renderTtt(game) {
-  const board = document.createElement('div');
-  board.className = 'ttt';
-  game.board.forEach((value, index) => {
-    const cell = document.createElement('button');
-    cell.textContent = value === 0 ? 'X' : value === 1 ? 'O' : '';
-    cell.addEventListener('click', () => socket.emit('game_move', { gameId: game.id, move: { index } }));
-    board.appendChild(cell);
-  });
-  els.gameArea.appendChild(board);
-}
-
-function renderConnect4(game) {
-  const board = document.createElement('div');
-  board.className = 'c4';
-  game.board.forEach((value, index) => {
-    const cell = document.createElement('div');
-    cell.className = value === 0 ? 'p0' : value === 1 ? 'p1' : '';
-    cell.addEventListener('click', () => socket.emit('game_move', { gameId: game.id, move: { col: index % 7 } }));
-    board.appendChild(cell);
-  });
-  els.gameArea.appendChild(board);
-}
-
-function renderRps(game) {
-  const wrap = document.createElement('div');
-  wrap.className = 'rps';
-  ['rock', 'paper', 'scissors'].forEach(choice => {
-    const button = document.createElement('button');
-    button.textContent = choice;
-    button.addEventListener('click', () => socket.emit('game_move', { gameId: game.id, move: { choice } }));
-    wrap.appendChild(button);
-  });
-  els.gameArea.appendChild(wrap);
-}
-
-function renderMemory(game) {
-  const wrap = document.createElement('div');
-  wrap.className = 'memory';
-  game.board.forEach((value, index) => {
-    const button = document.createElement('button');
-    const visible = game.flipped.includes(index) || game.matched.includes(index);
-    button.textContent = visible ? String(value + 1) : '?';
-    button.addEventListener('click', () => socket.emit('game_move', { gameId: game.id, move: { index } }));
-    wrap.appendChild(button);
-  });
-  els.gameArea.appendChild(wrap);
-}
-
-function bindGames() {
-  document.querySelectorAll('.game-create').forEach(button => {
-    button.addEventListener('click', () => socket.emit('game_create', { type: button.dataset.type }));
-  });
-  $('btn-join-game').addEventListener('click', () => {
-    const gameId = $('join-game-id').value.trim().toUpperCase();
-    if (gameId) socket.emit('game_join', { gameId });
-  });
-}
-
-function bindNavigation() {
-  $('nav-chat').addEventListener('click', () => showMain('chat'));
-  $('chat-home').addEventListener('click', () => showMain('chat'));
-  $('nav-games').addEventListener('click', () => showMain('games'));
-  $('btn-open-sidebar').addEventListener('click', () => document.querySelector('.sidebar').classList.add('open'));
-  $('btn-mobile-menu').addEventListener('click', () => document.querySelector('.sidebar').classList.remove('open'));
-  $('btn-logout').addEventListener('click', logout);
-}
-
-function showMain(view) {
-  els.chatView.classList.toggle('active', view === 'chat');
-  els.gamesView.classList.toggle('active', view === 'games');
-  $('nav-chat').classList.toggle('active', view === 'chat');
-  $('nav-games').classList.toggle('active', view === 'games');
-}
-
-function bindThemeAndAdmin() {
-  $('btn-theme-open').addEventListener('click', () => $('theme-modal').classList.remove('hidden'));
+  $('btn-room-create').addEventListener('click', createRoom);
+  $('btn-room-invite').addEventListener('click', () => $('invite-modal').classList.remove('hidden'));
+  $('btn-invite-close').addEventListener('click', () => $('invite-modal').classList.add('hidden'));
+  $('btn-create-invite').addEventListener('click', createInvite);
+  $('btn-join-invite').addEventListener('click', joinInvite);
+  $('btn-notifications').addEventListener('click', () => Notification?.requestPermission?.());
+  $('btn-theme').addEventListener('click', () => $('theme-modal').classList.remove('hidden'));
   $('btn-theme-close').addEventListener('click', () => $('theme-modal').classList.add('hidden'));
-  document.querySelectorAll('.theme-grid button[data-theme]').forEach(button => {
-    button.addEventListener('click', () => {
-      applyTheme(button.dataset.theme);
-      $('theme-modal').classList.add('hidden');
-    });
-  });
-
-  $('btn-admin-open').addEventListener('click', () => {
-    $('admin-pin').value = '';
-    $('admin-error').classList.add('hidden');
-    $('admin-modal').classList.remove('hidden');
-  });
+  document.querySelectorAll('[data-theme]').forEach(btn => btn.addEventListener('click', () => saveProfile({ theme: btn.dataset.theme })));
+  $('btn-admin').addEventListener('click', () => $('admin-modal').classList.remove('hidden'));
   $('btn-admin-cancel').addEventListener('click', () => $('admin-modal').classList.add('hidden'));
   $('btn-admin-unlock').addEventListener('click', unlockAdmin);
-  $('admin-pin').addEventListener('keydown', event => {
-    if (event.key === 'Enter') unlockAdmin();
+  $('btn-admin-refresh').addEventListener('click', loadAdmin);
+  $('btn-search-user').addEventListener('click', searchUsers);
+  $('profile-form').addEventListener('submit', e => {
+    e.preventDefault();
+    saveProfile({
+      username: $('profile-name').value,
+      status: $('profile-status').value,
+      bio: $('profile-bio').value,
+      banner: $('profile-banner-input').value,
+      accent: $('profile-accent').value,
+      theme: $('profile-theme').value,
+    });
+  });
+  $('btn-profile-picture').addEventListener('click', () => $('profile-picture-input').click());
+  $('profile-picture-input').addEventListener('change', updateProfilePicture);
+  document.querySelectorAll('[data-game]').forEach(btn => btn.addEventListener('click', () => state.socket.emit('game_create', { type: btn.dataset.game })));
+  $('btn-join-game').addEventListener('click', () => state.socket.emit('game_join', { gameId: $('join-game-id').value.trim().toUpperCase() }));
+}
+
+async function createRoom() {
+  const room = await request('/api/rooms', { method: 'POST', body: JSON.stringify({ name: $('room-name').value, topic: $('room-topic').value, private: $('room-private').checked }) });
+  state.rooms.push(room);
+  $('room-modal').classList.add('hidden');
+  renderRooms();
+  joinRoom(room.id);
+}
+
+async function createInvite() {
+  const invite = await request('/api/invites/create', { method: 'POST', body: JSON.stringify({ roomId: state.currentRoom }) });
+  $('invite-code').value = invite.code;
+  navigator.clipboard?.writeText(invite.code);
+}
+
+async function joinInvite() {
+  const room = await request('/api/invites/join', { method: 'POST', body: JSON.stringify({ code: $('invite-code').value }) });
+  if (!state.rooms.some(item => item.id === room.id)) state.rooms.push(room);
+  renderRooms();
+  joinRoom(room.id);
+  $('invite-modal').classList.add('hidden');
+}
+
+async function searchUsers() {
+  const q = $('friend-search').value.trim();
+  const users = await request(`/api/users/search?q=${encodeURIComponent(q)}`);
+  $('search-results').innerHTML = users.map(user => `<div class="item-row">${avatar(user)}<b>${esc(user.username)}</b><button class="mini good" data-add-friend="${user.id}">Add</button><button class="mini" data-start-dm="${user.id}">DM</button></div>`).join('') || '<p>No users found.</p>';
+  document.querySelectorAll('[data-add-friend]').forEach(btn => btn.addEventListener('click', async () => {
+    await request('/api/friends/request', { method: 'POST', body: JSON.stringify({ userId: btn.dataset.addFriend }) });
+    toast('Friend request sent');
+  }));
+  document.querySelectorAll('[data-start-dm]').forEach(btn => btn.addEventListener('click', () => startDm(btn.dataset.startDm)));
+}
+
+async function saveProfile(changes) {
+  const body = {
+    username: state.user.username,
+    status: state.user.status,
+    bio: state.user.bio,
+    banner: state.user.banner,
+    accent: state.user.accent,
+    theme: state.user.theme,
+    ...changes,
+  };
+  const data = await request('/api/user/profile', { method: 'POST', body: JSON.stringify(body) });
+  state.user = data.user;
+  localStorage.setItem('nexus_user', JSON.stringify(state.user));
+  applyProfileUi();
+  toast('Saved');
+}
+
+async function updateProfilePicture() {
+  const file = $('profile-picture-input').files[0];
+  $('profile-picture-input').value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) return toast('Choose an image');
+  const picture = await imageToSquareData(file);
+  const data = await request('/api/user/profile-picture', { method: 'POST', body: JSON.stringify({ picture }) });
+  state.user = data.user;
+  localStorage.setItem('nexus_user', JSON.stringify(state.user));
+  applyProfileUi();
+}
+
+function renderProfilePreview() {
+  $('profile-preview-name').textContent = state.user?.username || 'User';
+  $('profile-preview-status').textContent = state.user?.status || 'Online';
+  $('profile-preview-bio').textContent = state.user?.bio || 'No bio yet.';
+  $('profile-banner').style.background = state.user?.banner || `linear-gradient(135deg, ${state.user?.accent || '#5865f2'}, #eb459e)`;
+  $('profile-avatar').innerHTML = safePic(state.user?.picture) ? `<img src="${esc(state.user.picture)}" alt="">` : esc(state.user?.avatar || '?');
+}
+
+async function unlockAdmin() {
+  try {
+    const data = await request('/api/admin/unlock-pin', { method: 'POST', body: JSON.stringify({ pin: $('admin-pin').value }) });
+    saveSession(data);
+    $('admin-modal').classList.add('hidden');
+    showView('admin');
+    await loadAdmin();
+  } catch (err) {
+    $('admin-error').textContent = err.message;
+    $('admin-error').classList.remove('hidden');
+  }
+}
+
+async function loadAdmin() {
+  try {
+    const [stats, users, rooms, logs] = await Promise.all([request('/api/admin/stats'), request('/api/admin/users'), request('/api/admin/rooms'), request('/api/admin/logs')]);
+    $('admin-lock').classList.add('hidden');
+    $('admin-content').classList.remove('hidden');
+    $('admin-stats').innerHTML = Object.entries(stats).map(([k, v]) => `<div class="stat"><b>${v}</b><span>${esc(k)}</span></div>`).join('');
+    $('admin-users').innerHTML = `<table><tr><th>User</th><th>Email</th><th>Role</th><th>Actions</th></tr>${users.map(user => `<tr><td>${avatar(user)} ${esc(user.username)}</td><td>${esc(user.email || 'anon')}</td><td>${esc(user.role)}</td><td><button class="mini" data-admin="mute" data-user="${user.id}">Mute</button><button class="mini" data-admin="unmute" data-user="${user.id}">Unmute</button><button class="mini danger" data-admin="kick" data-user="${user.id}">Kick</button><button class="mini danger" data-admin="ban" data-user="${user.id}">Ban</button><button class="mini good" data-admin="add-mod" data-user="${user.id}">Mod</button><button class="mini" data-admin="remove-mod" data-user="${user.id}">Unmod</button></td></tr>`).join('')}</table>`;
+    $('admin-rooms').innerHTML = `<table><tr><th>Room</th><th>Private</th><th>Messages</th><th>Actions</th></tr>${rooms.map(room => `<tr><td># ${esc(room.name)}</td><td>${room.private ? 'yes' : 'no'}</td><td>${room.messageCount}</td><td><button class="mini danger" data-room-action="clear-room" data-room="${room.id}">Clear</button><button class="mini danger" data-room-action="delete-room" data-room="${room.id}">Delete</button></td></tr>`).join('')}</table>`;
+    $('admin-logs').innerHTML = logs.map(log => `<div class="item-row"><b>${esc(log.action)}</b><span>${esc(log.actor)} → ${esc(log.target)}</span><small>${new Date(log.timestamp).toLocaleString()}</small></div>`).join('');
+    document.querySelectorAll('[data-admin]').forEach(btn => btn.addEventListener('click', () => adminAction(btn.dataset.admin, { userId: btn.dataset.user })));
+    document.querySelectorAll('[data-room-action]').forEach(btn => btn.addEventListener('click', () => adminAction(btn.dataset.roomAction, { roomId: btn.dataset.room })));
+  } catch {
+    $('admin-lock').classList.remove('hidden');
+    $('admin-content').classList.add('hidden');
+  }
+}
+
+async function adminAction(action, body) {
+  if (action === 'delete-room' && !confirm('Delete room?')) return;
+  if (action === 'clear-room' && !confirm('Clear room messages?')) return;
+  await request(`/api/admin/${action}`, { method: 'POST', body: JSON.stringify(body) });
+  await loadAdmin();
+}
+
+function notify(data) {
+  if (document.hidden && window.Notification?.permission === 'granted') {
+    new Notification(`${data.from}`, { body: data.content || data.type });
+  }
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(file);
   });
 }
 
-function bindProfilePicture() {
-  els.btnProfilePicture.addEventListener('click', () => els.profilePictureInput.click());
-  els.profilePictureInput.addEventListener('change', async () => {
-    const file = els.profilePictureInput.files?.[0];
-    els.profilePictureInput.value = '';
-    if (!file) return;
-    if (!file.type.startsWith('image/')) return toast('Choose an image file');
-    if (file.size > 5 * 1024 * 1024) return toast('Image is too large. Choose one under 5 MB.');
-    try {
-      const picture = await imageFileToDataUrl(file);
-      const data = await request('/api/user/profile-picture', {
-        method: 'POST',
-        body: JSON.stringify({ picture }),
-      });
-      currentUser = data.user;
-      localStorage.setItem('nexus_user', JSON.stringify(currentUser));
-      updateUserUi();
-      if (socket) {
-        socket.disconnect();
-        connectSocket();
-        if (currentRoomId) socket.once('connect', () => socket.emit('join_room', currentRoomId));
-      }
-      toast('Profile picture updated');
-    } catch (err) {
-      toast(err.message || 'Could not update profile picture');
-    }
-  });
-}
-
-function imageFileToDataUrl(file) {
+function imageToSquareData(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read image'));
     reader.onload = () => {
-      const image = new Image();
-      image.onerror = () => reject(new Error('Could not load image'));
-      image.onload = () => {
-        const size = 256;
+      const img = new Image();
+      img.onerror = () => reject(new Error('Bad image'));
+      img.onload = () => {
         const canvas = document.createElement('canvas');
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        const side = Math.min(image.width, image.height);
-        const sx = (image.width - side) / 2;
-        const sy = (image.height - side) / 2;
-        ctx.drawImage(image, sx, sy, side, side, 0, 0, size, size);
+        canvas.width = 256; canvas.height = 256;
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2;
+        const sy = (img.height - side) / 2;
+        canvas.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, 256, 256);
         resolve(canvas.toDataURL('image/webp', 0.86));
       };
-      image.src = reader.result;
+      img.src = reader.result;
     };
     reader.readAsDataURL(file);
   });
 }
 
-async function unlockAdmin() {
-  const pin = $('admin-pin').value.trim();
-  const error = $('admin-error');
-  error.classList.add('hidden');
+async function refreshDevices() {
+  const devices = await navigator.mediaDevices?.enumerateDevices?.().catch(() => []) || [];
+  $('mic-select').innerHTML = devices.filter(d => d.kind === 'audioinput').map(d => `<option value="${d.deviceId}">${esc(d.label || 'Microphone')}</option>`).join('');
+  $('cam-select').innerHTML = devices.filter(d => d.kind === 'videoinput').map(d => `<option value="${d.deviceId}">${esc(d.label || 'Camera')}</option>`).join('');
+}
+
+async function startCall(callId = 'general-voice') {
+  if (state.callId) return leaveCall();
+  state.callId = callId;
+  $('call-overlay').classList.remove('hidden');
+  $('btn-join-call').innerHTML = '<span></span> Leave General Voice';
+  await refreshDevices();
   try {
-    const data = await request('/api/admin/unlock-pin', {
-      method: 'POST',
-      body: JSON.stringify({ pin }),
-    });
-    saveSession(data);
-    $('admin-modal').classList.add('hidden');
-    location.href = '/admin.html';
-  } catch (err) {
-    error.textContent = err.message;
-    error.classList.remove('hidden');
+    const audio = $('mic-select').value ? { deviceId: { exact: $('mic-select').value } } : true;
+    state.localStream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+  } catch {
+    state.localStream = new MediaStream();
+    toast('Microphone blocked, joined listen-only.');
   }
+  $('local-video').srcObject = state.localStream;
+  state.socket.emit('call_join', { callId });
+  updateCallStatus();
 }
 
-function copyText(text, message) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).then(() => toast(message));
+function leaveCall() {
+  Object.values(state.peers).forEach(peer => peer.pc.close());
+  state.peers = {};
+  document.querySelectorAll('.call-tile.remote').forEach(tile => tile.remove());
+  state.localStream?.getTracks().forEach(track => track.stop());
+  state.screenStream?.getTracks().forEach(track => track.stop());
+  state.localStream = null;
+  state.screenStream = null;
+  state.socket.emit('call_leave', { callId: state.callId });
+  state.callId = '';
+  $('call-overlay').classList.add('hidden');
+  $('btn-join-call').innerHTML = '<span></span> Join General Voice';
+}
+
+async function createPeer(peerId, info, initiator) {
+  if (state.peers[peerId]) return state.peers[peerId].pc;
+  addCallTile(peerId, info);
+  const pc = new RTCPeerConnection({ iceServers });
+  state.peers[peerId] = { pc, stream: new MediaStream(), info };
+  state.localStream?.getTracks().forEach(track => pc.addTrack(track, state.localStream));
+  state.screenStream?.getTracks().forEach(track => pc.addTrack(track, state.screenStream));
+  pc.ontrack = event => {
+    const peer = state.peers[peerId];
+    if (!peer) return;
+    event.streams[0].getTracks().forEach(track => peer.stream.addTrack(track));
+    if (event.track.kind === 'video') $(`call-tile-${peerId}`)?.classList.add('has-video');
+    const video = $(`call-video-${peerId}`);
+    if (video) {
+      video.srcObject = peer.stream;
+      video.muted = state.deafened;
+    }
+  };
+  pc.onicecandidate = event => event.candidate && state.socket.emit('call_ice', { to: peerId, candidate: event.candidate });
+  if (initiator) await sendOffer(peerId);
+  updateCallStatus();
+  return pc;
+}
+
+async function sendOffer(peerId) {
+  const pc = state.peers[peerId]?.pc;
+  if (!pc) return;
+  const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+  await pc.setLocalDescription(offer);
+  state.socket.emit('call_offer', { to: peerId, offer });
+}
+
+function addCallTile(peerId, info) {
+  if ($(`call-tile-${peerId}`)) return;
+  const tile = document.createElement('div');
+  tile.id = `call-tile-${peerId}`;
+  tile.className = 'call-tile remote';
+  tile.innerHTML = `<img src="${esc(safePic(info.picture))}" alt=""><video id="call-video-${peerId}" autoplay playsinline></video><span>${esc(info.username || 'User')}</span>`;
+  $('call-stage').appendChild(tile);
+}
+
+function removePeer(peerId) {
+  state.peers[peerId]?.pc.close();
+  delete state.peers[peerId];
+  $(`call-tile-${peerId}`)?.remove();
+  updateCallStatus();
+}
+
+function updateCallStatus() {
+  $('call-status').textContent = `${Object.keys(state.peers).length + 1} connected`;
+}
+
+async function toggleCamera() {
+  if (!state.callId) return;
+  const existing = state.localStream?.getVideoTracks()[0];
+  if (existing) {
+    existing.enabled = !existing.enabled;
+    state.camOn = existing.enabled;
   } else {
-    prompt(message, text);
+    const video = $('cam-select').value ? { deviceId: { exact: $('cam-select').value } } : true;
+    const cam = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    const track = cam.getVideoTracks()[0];
+    state.localStream.addTrack(track);
+    $('local-video').srcObject = state.localStream;
+    state.camOn = true;
+    for (const peerId of Object.keys(state.peers)) {
+      state.peers[peerId].pc.addTrack(track, state.localStream);
+      await sendOffer(peerId);
+    }
+  }
+  $('local-call-tile').classList.toggle('has-video', state.camOn);
+  $('btn-call-camera').classList.toggle('off', !state.camOn);
+}
+
+function toggleMic() {
+  state.micOn = !state.micOn;
+  state.localStream?.getAudioTracks().forEach(track => { track.enabled = state.micOn && !state.pushToTalk; });
+  $('btn-call-mic').classList.toggle('off', !state.micOn);
+}
+
+function toggleDeafen() {
+  state.deafened = !state.deafened;
+  document.querySelectorAll('.call-tile.remote video').forEach(video => { video.muted = state.deafened; });
+  $('btn-call-deafen').classList.toggle('off', state.deafened);
+}
+
+async function shareScreen() {
+  if (!state.callId) return;
+  if (state.screenStream) {
+    state.screenStream.getTracks().forEach(track => track.stop());
+    state.screenStream = null;
+    $('btn-call-screen').classList.remove('active');
+    return;
+  }
+  state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  $('local-video').srcObject = state.screenStream;
+  $('local-call-tile').classList.add('has-video');
+  $('btn-call-screen').classList.add('active');
+  const track = state.screenStream.getVideoTracks()[0];
+  track.onended = () => {
+    state.screenStream = null;
+    $('local-video').srcObject = state.localStream;
+    $('btn-call-screen').classList.remove('active');
+  };
+  for (const peerId of Object.keys(state.peers)) {
+    state.peers[peerId].pc.addTrack(track, state.screenStream);
+    await sendOffer(peerId);
   }
 }
 
-async function startApp() {
-  showScreen(true);
-  updateUserUi();
-  connectSocket();
-  await loadRooms();
-  if (!currentRoomId) joinRoom('general', 'General');
+function togglePushToTalk() {
+  state.pushToTalk = !state.pushToTalk;
+  $('btn-call-ptt').classList.toggle('active', state.pushToTalk);
+  state.localStream?.getAudioTracks().forEach(track => { track.enabled = state.pushToTalk ? false : state.micOn; });
+}
+
+function bindCall() {
+  $('btn-join-call').addEventListener('click', () => startCall());
+  $('btn-call-leave').addEventListener('click', leaveCall);
+  $('btn-call-camera').addEventListener('click', () => toggleCamera().catch(() => toast('Camera blocked')));
+  $('btn-call-mic').addEventListener('click', toggleMic);
+  $('btn-call-deafen').addEventListener('click', toggleDeafen);
+  $('btn-call-screen').addEventListener('click', () => shareScreen().catch(() => {}));
+  $('btn-call-invite').addEventListener('click', () => navigator.clipboard?.writeText(location.href));
+  $('btn-call-ptt').addEventListener('click', togglePushToTalk);
+  document.addEventListener('keydown', e => {
+    if (state.pushToTalk && e.code === 'Space') state.localStream?.getAudioTracks().forEach(track => { track.enabled = true; });
+  });
+  document.addEventListener('keyup', e => {
+    if (state.pushToTalk && e.code === 'Space') state.localStream?.getAudioTracks().forEach(track => { track.enabled = false; });
+  });
+}
+
+function renderGame(game) {
+  state.currentGame = game;
+  $('game-area').classList.remove('hidden');
+  const status = game.status === 'ended' ? winnerText(game) : game.status === 'waiting' ? 'Waiting for player' : `Turn: ${game.players[game.turn % 2]?.username || 'Player'}`;
+  $('game-area').innerHTML = `<div class="row"><h3>${esc(game.type)} - ${esc(game.id)}</h3><button class="btn ghost" id="copy-game">Copy ID</button><span>${esc(status)}</span></div><div id="game-board"></div>`;
+  $('copy-game').addEventListener('click', () => navigator.clipboard?.writeText(game.id));
+  if (game.type === 'connect4') renderConnect4(game);
+  else if (game.type === 'rps') renderRps(game);
+  else if (game.type === 'memory') renderMemory(game);
+  else if (game.type === 'trivia') renderTrivia(game);
+  else if (game.type === 'checkers') renderCheckers(game);
+  else renderTtt(game);
+}
+
+function winnerText(game) {
+  return game.winner === 'draw' ? 'Draw' : `Winner: ${game.players[game.winner]?.username || 'Player'}`;
+}
+
+function move(move) {
+  state.socket.emit('game_move', { gameId: state.currentGame.id, move });
+}
+
+function renderTtt(game) {
+  $('game-board').className = 'board-ttt';
+  $('game-board').innerHTML = game.board.map((v, i) => `<button data-i="${i}">${v === 0 ? 'X' : v === 1 ? 'O' : ''}</button>`).join('');
+  document.querySelectorAll('[data-i]').forEach(btn => btn.addEventListener('click', () => move({ index: Number(btn.dataset.i) })));
+}
+
+function renderConnect4(game) {
+  $('game-board').className = 'board-c4';
+  $('game-board').innerHTML = game.board.map((v, i) => `<button class="${v === 0 ? 'p0' : v === 1 ? 'p1' : ''}" data-c="${i % 7}"></button>`).join('');
+  document.querySelectorAll('[data-c]').forEach(btn => btn.addEventListener('click', () => move({ col: Number(btn.dataset.c) })));
+}
+
+function renderRps() {
+  $('game-board').className = 'board-rps';
+  $('game-board').innerHTML = ['rock','paper','scissors'].map(choice => `<button data-rps="${choice}">${choice}</button>`).join('');
+  document.querySelectorAll('[data-rps]').forEach(btn => btn.addEventListener('click', () => move({ choice: btn.dataset.rps })));
+}
+
+function renderMemory(game) {
+  $('game-board').className = 'board-memory';
+  $('game-board').innerHTML = game.board.map((v, i) => `<button data-mem="${i}">${game.flipped.includes(i) || game.matched.includes(i) ? v + 1 : '?'}</button>`).join('');
+  document.querySelectorAll('[data-mem]').forEach(btn => btn.addEventListener('click', () => move({ index: Number(btn.dataset.mem) })));
+}
+
+function renderTrivia(game) {
+  $('game-board').className = 'board-trivia';
+  $('game-board').innerHTML = `<h3>${esc(game.question.text)}</h3>${game.question.options.map((option, i) => `<button data-answer="${i}">${esc(option)}</button>`).join('')}`;
+  document.querySelectorAll('[data-answer]').forEach(btn => btn.addEventListener('click', () => move({ answer: Number(btn.dataset.answer) })));
+}
+
+function renderCheckers(game) {
+  $('game-board').className = 'board-checkers';
+  $('game-board').innerHTML = game.board.map((v, i) => `<button class="${(Math.floor(i / 8) + i % 8) % 2 ? 'dark-cell' : ''} ${v === 0 ? 'p0' : v === 1 ? 'p1' : ''}" data-cell="${i}">${v === null ? '' : '●'}</button>`).join('');
+  let selected = null;
+  document.querySelectorAll('[data-cell]').forEach(btn => btn.addEventListener('click', () => {
+    const cell = Number(btn.dataset.cell);
+    if (selected === null) selected = cell;
+    else { move({ from: selected, to: cell }); selected = null; }
+  }));
 }
 
 bindAuth();
-bindChat();
+bindUi();
 bindCall();
-bindGames();
-bindNavigation();
-bindThemeAndAdmin();
-bindProfilePicture();
-applyTheme(localStorage.getItem('nexus_theme') || 'midnight');
-
-if (currentUser && token) startApp();
-else showScreen(false);
+if (state.user && state.token) startApp();

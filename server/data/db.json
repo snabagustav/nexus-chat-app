@@ -1,0 +1,23 @@
+{
+  "users": [],
+  "rooms": [
+    {
+      "id": "general",
+      "name": "general",
+      "private": false,
+      "ownerId": null,
+      "createdAt": 0,
+      "topic": "Main chat"
+    }
+  ],
+  "messages": [],
+  "dmThreads": [],
+  "friendRequests": [],
+  "friends": [],
+  "invites": [],
+  "moderators": [],
+  "muted": {},
+  "bannedEmails": [],
+  "auditLogs": [],
+  "games": []
+}

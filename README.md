@@ -1,9 +1,19 @@
-# Nexus Chat App
+# Nexus Chat App Mega
 
-Complete production folder for Railway.
+Clean full build for Railway.
 
-Use this folder as the whole GitHub repo. Do not put it inside another `chatapp`
-folder.
+Features:
+
+- persistent JSON database
+- accounts, Google, anonymous login
+- chat rooms, private rooms, invites
+- friends and direct messages
+- reactions, mentions, browser notifications
+- profile pictures, bio, status, banner, custom themes
+- fullscreen Discord-style calls, screen share, device picker, push-to-talk
+- admin panel with users, rooms, logs, mutes, bans, moderators
+- games: Tic Tac Toe, Connect Four, Rock Paper Scissors, Memory, Trivia, Checkers
+- swear filter with cooldown for non-admins/non-mods
 
 Required Railway variables:
 
@@ -11,25 +21,17 @@ Required Railway variables:
 - `NODE_ENV=production`
 - `ADMIN_PIN_HASH`
 
-The admin PIN is not stored in this repository. Set `ADMIN_PIN_HASH` in Railway
-Variables. The PIN itself is checked only on the server.
+The admin PIN is not stored in GitHub. Use the secure hash in Railway Variables.
 
 Admin flow:
 
-1. Log in to the app.
-2. Click the `A` button in the left rail.
-3. Enter your 4 digit PIN.
-4. The admin page opens at `/admin.html`.
-
-Theme flow:
-
-1. Click the `T` button in the left rail.
-2. Pick a theme.
-3. The theme is saved in the browser and on your account while the server is running.
+1. Log in.
+2. Click `Admin`.
+3. Enter your PIN.
+4. Admin panel opens.
 
 Railway:
 
-- Source repo: `snabagustav/nexus-chat-app`
-- Branch: `main`
-- Root directory: leave empty
-- Start command comes from `railway.toml`
+- repo: `snabagustav/nexus-chat-app`
+- branch: `main`
+- root directory: empty
