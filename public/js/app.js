@@ -23,6 +23,7 @@ const els = {
   chatView: $('chat-view'),
   gameArea: $('game-area'),
   gamesLobby: $('games-lobby'),
+  callStatus: $('call-status'),
 };
 
 let token = localStorage.getItem('nexus_token') || '';
@@ -427,7 +428,12 @@ async function startCall(callId = 'general') {
   if (currentCallId) return leaveCall();
   currentCallId = callId;
   els.callArea.classList.remove('hidden');
+  document.body.classList.add('in-call');
+  els.callStatus.textContent = 'Connecting...';
   els.btnJoinCall.innerHTML = '<span></span>Leave General Call';
+  $('btn-toggle-cam').classList.add('off');
+  $('btn-toggle-mic').classList.remove('off');
+  $('btn-deafen').classList.remove('off');
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
   } catch {
@@ -437,6 +443,7 @@ async function startCall(callId = 'general') {
   els.localVideo.srcObject = localStream;
   micEnabled = true;
   socket.emit('call_join', { callId });
+  updateCallStatus();
 }
 
 function leaveCall() {
@@ -450,9 +457,12 @@ function leaveCall() {
   socket.emit('call_leave', { callId: currentCallId });
   currentCallId = '';
   els.callArea.classList.add('hidden');
+  document.body.classList.remove('in-call');
   els.btnJoinCall.innerHTML = '<span></span>Join General Call';
   $('btn-toggle-cam').classList.remove('active', 'off');
   $('btn-share-screen').classList.remove('active');
+  $('btn-toggle-mic').classList.remove('off');
+  $('btn-deafen').classList.remove('off');
 }
 
 async function createPeer(peerId, info, initiator) {
@@ -508,6 +518,7 @@ function addRemoteTile(peerId, info) {
   tile.title = info.username || 'User';
   tile.append(video, label);
   els.videoGrid.appendChild(tile);
+  updateCallStatus();
 }
 
 function removePeer(peerId) {
@@ -517,6 +528,13 @@ function removePeer(peerId) {
   }
   const tile = $(`remote-tile-${peerId}`);
   if (tile) tile.remove();
+  updateCallStatus();
+}
+
+function updateCallStatus() {
+  if (!els.callStatus || !currentCallId) return;
+  const count = Object.keys(peers).length + 1;
+  els.callStatus.textContent = `${count} connected - voice channel`;
 }
 
 async function toggleCamera() {
@@ -545,12 +563,14 @@ function toggleMic() {
   micEnabled = !micEnabled;
   localStream.getAudioTracks().forEach(track => { track.enabled = micEnabled; });
   $('btn-toggle-mic').classList.toggle('off', !micEnabled);
+  $('btn-toggle-mic').title = micEnabled ? 'Mute' : 'Unmute';
 }
 
 function toggleDeafen() {
   deafened = !deafened;
   document.querySelectorAll('.call-avatar-tile.remote video').forEach(video => { video.muted = deafened; });
   $('btn-deafen').classList.toggle('off', deafened);
+  $('btn-deafen').title = deafened ? 'Undeafen' : 'Deafen';
 }
 
 async function shareScreen() {

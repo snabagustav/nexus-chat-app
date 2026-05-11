@@ -113,8 +113,28 @@ function verifyAdminPin(pin) {
   }
 }
 
+const blockedTerms = [
+  'damn', 'hell', 'crap', 'bloody', 'piss', 'bugger', 'bastard', 'ass', 'asshole',
+  'jerk', 'douche', 'prick', 'nigger', 'nigga', 'faggot', 'retard', 'kys',
+  'fuck', 'fucking', 'motherfucker', 'shit', 'bullshit',
+  'piss off', 'son of a bitch', 'dick', 'cock', 'cunt', 'twat', 'wanker', 'slut',
+  'whore', 'skank', 'dickhead', 'pussy', 'ballsack', 'scumbag', 'goddamn',
+  'jesus christ', 'holy shit', "for christ's sake", 'for christs sake', 'fuck off',
+  'fuck you', 'eat shit', 'go to hell', 'screw you', 'fan', 'fan också', 'förbannat',
+  'jävlar', 'jävla', 'helvete', 'skit', 'skitsamma', 'kuk', 'fitta', 'rövhål',
+  'arsle', 'hora', 'slyna', 'idiot', 'svin', 'kärring', 'as', 'satan', 'förbannad',
+  'knulle', 'kuksugare', 'rövknull', 'runkare', 'dra åt helvete', 'håll käften',
+  'vad fan', 'jävla idiot', 'stick åt helvete', 'skit ner dig',
+];
+
+const blockedPatterns = blockedTerms.map(term => {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, 'iu');
+});
+
 function containsBlockedWord(text) {
-  return /\b(fuck|shit|bitch|cunt|nigger|nigga|faggot|retard|kys)\b/i.test(String(text || ''));
+  const value = String(text || '').normalize('NFC');
+  return blockedPatterns.some(pattern => pattern.test(value));
 }
 
 app.post('/api/auth/register', async (req, res) => {
