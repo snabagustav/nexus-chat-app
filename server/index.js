@@ -199,6 +199,22 @@ app.post('/api/user/theme', (req, res) => {
   res.json({ success: true, user: safeUser(user) });
 });
 
+app.post('/api/user/profile-picture', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  const picture = String(req.body.picture || '');
+  if (!picture) {
+    user.picture = '';
+    return res.json({ success: true, user: safeUser(user) });
+  }
+  if (picture.length > 350000) return res.status(413).json({ error: 'Image is too large. Use a smaller picture.' });
+  if (!/^data:image\/(png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=]+$/i.test(picture)) {
+    return res.status(400).json({ error: 'Use a normal image file' });
+  }
+  user.picture = picture;
+  res.json({ success: true, user: safeUser(user) });
+});
+
 app.post('/api/admin/unlock-pin', (req, res) => {
   const user = userFromReq(req);
   if (!user) return res.status(401).json({ error: 'Login first' });
@@ -332,7 +348,7 @@ io.on('connection', socket => {
     }
     const message = {
       id: uuid(), userId: user.id, username: user.username, avatar: user.avatar,
-      content, timestamp: Date.now(), roomId: room.id, role: roleOf(user),
+      picture: user.picture || '', content, timestamp: Date.now(), roomId: room.id, role: roleOf(user),
     };
     room.messages.push(message);
     if (room.messages.length > 300) room.messages.shift();
@@ -354,14 +370,14 @@ io.on('connection', socket => {
     const peers = Array.from(callRooms.get(callId));
     const peerList = peers.map(peerId => {
       const peerUser = users.get(onlineUsers.get(peerId)?.userId);
-      return { peerId, username: peerUser?.username || 'User', avatar: peerUser?.avatar || '?' };
+      return { peerId, username: peerUser?.username || 'User', avatar: peerUser?.avatar || '?', picture: peerUser?.picture || '' };
     });
     callRooms.get(callId).add(socket.id);
     socket.join('call_' + callId);
-    peers.forEach(peerId => io.to(peerId).emit('call_peer_joined', { peerId: socket.id, username: user.username, avatar: user.avatar }));
+    peers.forEach(peerId => io.to(peerId).emit('call_peer_joined', { peerId: socket.id, username: user.username, avatar: user.avatar, picture: user.picture || '' }));
     socket.emit('call_existing_peers', { peers: peerList, callId });
   });
-  socket.on('call_offer', data => io.to(data.to).emit('call_offer', { from: socket.id, offer: data.offer, username: user.username, avatar: user.avatar }));
+  socket.on('call_offer', data => io.to(data.to).emit('call_offer', { from: socket.id, offer: data.offer, username: user.username, avatar: user.avatar, picture: user.picture || '' }));
   socket.on('call_answer', data => io.to(data.to).emit('call_answer', { from: socket.id, answer: data.answer }));
   socket.on('call_ice', data => io.to(data.to).emit('call_ice', { from: socket.id, candidate: data.candidate }));
   socket.on('call_leave', data => leaveCall(socket, data.callId));

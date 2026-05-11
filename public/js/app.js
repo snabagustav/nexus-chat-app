@@ -6,6 +6,8 @@ const els = {
   authError: $('auth-error'),
   sidebarName: $('sidebar-name'),
   sidebarAvatar: $('sidebar-avatar'),
+  profilePictureInput: $('profile-picture-input'),
+  btnProfilePicture: $('btn-profile-picture'),
   roomList: $('room-list'),
   currentRoomTitle: $('current-room-title'),
   roomMemberCount: $('room-member-count'),
@@ -24,6 +26,7 @@ const els = {
   gameArea: $('game-area'),
   gamesLobby: $('games-lobby'),
   callStatus: $('call-status'),
+  localPicture: $('local-picture'),
 };
 
 let token = localStorage.getItem('nexus_token') || '';
@@ -70,6 +73,26 @@ function escapeText(value) {
     '"': '&quot;',
     "'": '&#39;',
   }[char]));
+}
+
+function safePictureSrc(picture) {
+  const value = String(picture || '').trim();
+  if (/^data:image\/(png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=]+$/i.test(value)) return value;
+  if (/^https?:\/\/[^\s"'<>]+$/i.test(value)) return value;
+  return '';
+}
+
+function avatarMarkup(user, className = 'avatar') {
+  const picture = safePictureSrc(user?.picture);
+  const fallback = escapeText(user?.avatar || (user?.username || '?')[0].toUpperCase());
+  if (picture) return `<span class="${className} has-picture"><img src="${escapeText(picture)}" alt=""></span>`;
+  return `<span class="${className}">${fallback}</span>`;
+}
+
+function setAvatarButton(button, user) {
+  const picture = safePictureSrc(user?.picture);
+  button.innerHTML = picture ? `<img src="${escapeText(picture)}" alt="">` : escapeText(user?.avatar || (user?.username || 'U')[0].toUpperCase());
+  button.classList.toggle('has-picture', !!picture);
 }
 
 function setAuthError(message) {
@@ -130,7 +153,12 @@ function applyTheme(theme) {
 function updateUserUi() {
   if (!currentUser) return;
   els.sidebarName.textContent = currentUser.username || 'User';
-  els.sidebarAvatar.textContent = currentUser.avatar || (currentUser.username || 'U')[0].toUpperCase();
+  setAvatarButton(els.sidebarAvatar, currentUser);
+  if (els.localPicture) {
+    const picture = safePictureSrc(currentUser.picture);
+    els.localPicture.src = picture;
+    els.localPicture.classList.toggle('hidden', !picture);
+  }
   $('local-label').textContent = currentUser.username || 'You';
   applyTheme(currentUser.theme);
 }
@@ -266,7 +294,7 @@ function connectSocket() {
     createPeer(info.peerId, info, false).catch(console.error);
   });
   socket.on('call_offer', async data => {
-    const info = normalizePeer({ peerId: data.from, username: data.username, avatar: data.avatar });
+    const info = normalizePeer({ peerId: data.from, username: data.username, avatar: data.avatar, picture: data.picture });
     const pc = await createPeer(data.from, info, false);
     await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
     const answer = await pc.createAnswer();
@@ -296,6 +324,7 @@ function normalizePeer(peer) {
     peerId: peer.peerId || peer.id,
     username: peer.username || 'User',
     avatar: peer.avatar || '?',
+    picture: peer.picture || '',
   };
 }
 
@@ -338,7 +367,7 @@ function renderMembers(members) {
   members.forEach(member => {
     const row = document.createElement('div');
     row.className = 'member';
-    row.innerHTML = `<div class="avatar">${escapeText(member.avatar || '?')}</div><div><b>${escapeText(member.username)}</b><br><small>${escapeText(member.role || 'user')}</small></div>`;
+    row.innerHTML = `${avatarMarkup(member)}<div><b>${escapeText(member.username)}</b><br><small>${escapeText(member.role || 'user')}</small></div>`;
     els.membersList.appendChild(row);
   });
 }
@@ -362,7 +391,17 @@ function renderMessage(message) {
 
   const avatar = document.createElement('div');
   avatar.className = 'msg-avatar';
-  avatar.textContent = message.avatar || '?';
+  if (message.picture) {
+    const picture = safePictureSrc(message.picture);
+    if (picture) {
+      avatar.classList.add('has-picture');
+      avatar.innerHTML = `<img src="${escapeText(picture)}" alt="">`;
+    } else {
+      avatar.textContent = message.avatar || '?';
+    }
+  } else {
+    avatar.textContent = message.avatar || '?';
+  }
 
   const body = document.createElement('div');
   const top = document.createElement('div');
@@ -457,6 +496,7 @@ function leaveCall() {
   socket.emit('call_leave', { callId: currentCallId });
   currentCallId = '';
   els.callArea.classList.add('hidden');
+  document.querySelector('.call-avatar-tile.local')?.classList.remove('has-video');
   document.body.classList.remove('in-call');
   els.btnJoinCall.innerHTML = '<span></span>Join General Call';
   $('btn-toggle-cam').classList.remove('active', 'off');
@@ -478,6 +518,7 @@ async function createPeer(peerId, info, initiator) {
     const remote = peers[peerId];
     if (!remote) return;
     event.streams[0].getTracks().forEach(track => remote.stream.addTrack(track));
+    if (event.track.kind === 'video') $(`remote-tile-${peerId}`)?.classList.add('has-video');
     const video = $(`remote-video-${peerId}`);
     if (video) {
       video.srcObject = remote.stream;
@@ -509,6 +550,11 @@ function addRemoteTile(peerId, info) {
   const tile = document.createElement('div');
   tile.id = `remote-tile-${peerId}`;
   tile.className = 'call-avatar-tile remote';
+  const picture = document.createElement('img');
+  const pictureSrc = safePictureSrc(info.picture);
+  picture.className = `call-picture ${pictureSrc ? '' : 'hidden'}`;
+  picture.alt = '';
+  picture.src = pictureSrc;
   const video = document.createElement('video');
   video.id = `remote-video-${peerId}`;
   video.autoplay = true;
@@ -516,7 +562,7 @@ function addRemoteTile(peerId, info) {
   const label = document.createElement('span');
   label.textContent = info.username || 'User';
   tile.title = info.username || 'User';
-  tile.append(video, label);
+  tile.append(picture, video, label);
   els.videoGrid.appendChild(tile);
   updateCallStatus();
 }
@@ -543,12 +589,14 @@ async function toggleCamera() {
   if (existing) {
     existing.enabled = !existing.enabled;
     camEnabled = existing.enabled;
+    document.querySelector('.call-avatar-tile.local')?.classList.toggle('has-video', camEnabled);
   } else {
     const cam = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     const track = cam.getVideoTracks()[0];
     localStream.addTrack(track);
     els.localVideo.srcObject = localStream;
     camEnabled = true;
+    document.querySelector('.call-avatar-tile.local')?.classList.add('has-video');
     for (const peerId of Object.keys(peers)) {
       peers[peerId].pc.addTrack(track, localStream);
       await sendOffer(peerId);
@@ -585,10 +633,12 @@ async function shareScreen() {
     screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
     const track = screenStream.getVideoTracks()[0];
     els.localVideo.srcObject = screenStream;
+    document.querySelector('.call-avatar-tile.local')?.classList.add('has-video');
     $('btn-share-screen').classList.add('active');
     track.onended = () => {
       screenStream = null;
       els.localVideo.srcObject = localStream;
+      document.querySelector('.call-avatar-tile.local')?.classList.toggle('has-video', !!localStream?.getVideoTracks().some(track => track.enabled));
       $('btn-share-screen').classList.remove('active');
     };
     for (const peerId of Object.keys(peers)) {
@@ -731,6 +781,60 @@ function bindThemeAndAdmin() {
   });
 }
 
+function bindProfilePicture() {
+  els.btnProfilePicture.addEventListener('click', () => els.profilePictureInput.click());
+  els.profilePictureInput.addEventListener('change', async () => {
+    const file = els.profilePictureInput.files?.[0];
+    els.profilePictureInput.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return toast('Choose an image file');
+    if (file.size > 5 * 1024 * 1024) return toast('Image is too large. Choose one under 5 MB.');
+    try {
+      const picture = await imageFileToDataUrl(file);
+      const data = await request('/api/user/profile-picture', {
+        method: 'POST',
+        body: JSON.stringify({ picture }),
+      });
+      currentUser = data.user;
+      localStorage.setItem('nexus_user', JSON.stringify(currentUser));
+      updateUserUi();
+      if (socket) {
+        socket.disconnect();
+        connectSocket();
+        if (currentRoomId) socket.once('connect', () => socket.emit('join_room', currentRoomId));
+      }
+      toast('Profile picture updated');
+    } catch (err) {
+      toast(err.message || 'Could not update profile picture');
+    }
+  });
+}
+
+function imageFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read image'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('Could not load image'));
+      image.onload = () => {
+        const size = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const side = Math.min(image.width, image.height);
+        const sx = (image.width - side) / 2;
+        const sy = (image.height - side) / 2;
+        ctx.drawImage(image, sx, sy, side, side, 0, 0, size, size);
+        resolve(canvas.toDataURL('image/webp', 0.86));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 async function unlockAdmin() {
   const pin = $('admin-pin').value.trim();
   const error = $('admin-error');
@@ -771,6 +875,7 @@ bindCall();
 bindGames();
 bindNavigation();
 bindThemeAndAdmin();
+bindProfilePicture();
 applyTheme(localStorage.getItem('nexus_theme') || 'midnight');
 
 if (currentUser && token) startApp();

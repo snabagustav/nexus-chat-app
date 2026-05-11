@@ -74,7 +74,8 @@
         <button id="btn-join-private">Join</button>
       </div>
       <footer class="user-panel">
-        <div id="sidebar-avatar" class="avatar">?</div>
+        <button id="btn-profile-picture" class="avatar avatar-button" title="Change profile picture">?</button>
+        <input id="profile-picture-input" class="hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
         <div class="user-name">
           <b id="sidebar-name">User</b>
           <small>Online</small>
@@ -136,6 +137,7 @@
       </header>
       <div id="video-grid" class="call-stage">
         <div class="call-avatar-tile local">
+          <img id="local-picture" class="call-picture" alt="">
           <video id="local-video" autoplay muted playsinline></video>
           <span id="local-label">You</span>
         </div>
