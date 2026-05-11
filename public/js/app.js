@@ -104,7 +104,7 @@ function startApp() {
     $('sidebar-avatar').style.backgroundImage = `url(${currentUser.picture})`;
     $('sidebar-avatar').textContent = '';
   }
-  socket = io({ auth: { token: token() }, transports: ['polling', 'websocket'] });
+  socket = io({ auth: { token: token() }, transports: ['polling'], upgrade: false });
   setupSocket();
   loadRooms();
 }
