@@ -1,167 +1,177 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nexus</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/css/style.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexus Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-
-<div id="auth-screen" class="screen active">
-  <div class="auth-bg"><div class="auth-orb orb1"></div><div class="auth-orb orb2"></div></div>
-  <div class="auth-card">
-    <div class="auth-logo"><span class="logo-icon">✦</span><span class="logo-text">NEXUS</span></div>
-    <p class="auth-tagline">Chat. Call. Play.</p>
-    <div class="auth-tabs">
-      <button class="auth-tab active" data-tab="login">Sign In</button>
-      <button class="auth-tab" data-tab="register">Register</button>
-    </div>
-    <div id="tab-login" class="auth-form active">
-      <button id="btn-google" class="btn-google"><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Continue with Google</button>
-      <div class="divider"><span>or</span></div>
-      <input type="email" id="login-email" placeholder="Email address" autocomplete="email">
-      <input type="password" id="login-password" placeholder="Password" autocomplete="current-password">
-      <button id="btn-login" class="btn-primary">Sign In →</button>
-      <div class="divider"><span>or</span></div>
-      <button id="btn-anon-toggle" class="btn-ghost">Continue Anonymously</button>
-      <div id="anon-form" style="display:none">
-        <input type="text" id="anon-name" placeholder="Your display name (required)" maxlength="30">
-        <button id="btn-anon" class="btn-primary">Enter as Guest →</button>
+  <section id="auth-screen" class="screen active">
+    <div class="auth-card">
+      <h1>Nexus</h1>
+      <p>Chat, calls and games.</p>
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-tab="login">Sign in</button>
+        <button class="auth-tab" data-tab="register">Register</button>
       </div>
-    </div>
-    <div id="tab-register" class="auth-form">
-      <button class="btn-google" onclick="document.getElementById('btn-google').click()"><svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Sign up with Google</button>
-      <div class="divider"><span>or</span></div>
-      <input type="text" id="reg-username" placeholder="Display name" maxlength="30">
-      <input type="email" id="reg-email" placeholder="Email address">
-      <input type="password" id="reg-password" placeholder="Password (min 6 chars)">
-      <button id="btn-register" class="btn-primary">Create Account →</button>
-    </div>
-    <div id="auth-error" class="auth-error" style="display:none"></div>
-  </div>
-</div>
-
-<div id="app-screen" class="screen">
-
-  <!-- Server icons -->
-  <div class="dc-servers">
-    <div class="dc-server-btn active" id="srv-chat" title="Chat">✦</div>
-    <div class="dc-divider-h"></div>
-    <div class="dc-server-btn" id="srv-games" title="Games">🎮</div>
-  </div>
-
-  <!-- Channel sidebar -->
-  <div class="dc-sidebar">
-    <div class="dc-sidebar-header">
-      <span class="dc-server-name">NEXUS</span>
-      <span id="online-badge"><span id="online-count">0</span> online</span>
-    </div>
-    <div class="dc-section-label">TEXT CHANNELS</div>
-    <div id="room-list"></div>
-    <div class="dc-section-label" style="margin-top:8px">VOICE</div>
-    <div class="dc-vc-item" id="vc-channel">
-      <span>🔊 General</span>
-      <button id="btn-join-vc" class="dc-join-btn">Join</button>
-    </div>
-    <div class="dc-user-panel">
-      <div class="dc-up-avatar" id="sidebar-avatar"></div>
-      <div class="dc-up-info">
-        <div class="dc-up-name" id="sidebar-name"></div>
-        <div class="dc-up-status">● Online</div>
-      </div>
-      <button id="btn-logout" class="dc-up-btn" title="Logout">⏏</button>
-    </div>
-  </div>
-
-  <!-- Main -->
-  <div class="dc-main">
-
-    <!-- Chat view -->
-    <div id="view-chat" class="dc-view active">
-      <div class="dc-topbar">
-        <span class="dc-topbar-hash">#</span>
-        <span id="current-room-name" class="dc-topbar-name">general</span>
-        <span class="dc-topbar-sep">|</span>
-        <span id="room-member-count" class="dc-topbar-desc"></span>
-      </div>
-      <div id="messages-area" class="dc-messages">
-        <div class="dc-welcome">
-          <div class="dc-welcome-icon">✦</div>
-          <h3>Welcome to Nexus</h3>
-          <p>Select a channel to start chatting</p>
+      <div id="tab-login" class="auth-form active">
+        <button id="btn-google" class="google-btn">Continue with Google</button>
+        <input id="login-email" type="email" placeholder="Email">
+        <input id="login-password" type="password" placeholder="Password">
+        <button id="btn-login" class="primary-btn">Sign in</button>
+        <button id="btn-anon-toggle" class="ghost-btn">Continue anonymous</button>
+        <div id="anon-form" class="hidden">
+          <input id="anon-name" type="text" placeholder="Display name">
+          <button id="btn-anon" class="primary-btn">Enter</button>
         </div>
       </div>
-      <div id="typing-indicator" class="dc-typing" style="display:none"></div>
-      <div class="dc-inputbar">
-        <input type="text" id="message-input" class="dc-input" placeholder="Message #general" maxlength="500" disabled>
-        <button id="btn-send" class="dc-send" disabled>➤</button>
+      <div id="tab-register" class="auth-form">
+        <input id="reg-username" type="text" placeholder="Display name">
+        <input id="reg-email" type="email" placeholder="Email">
+        <input id="reg-password" type="password" placeholder="Password">
+        <button id="btn-register" class="primary-btn">Create account</button>
+      </div>
+      <div id="auth-error" class="error hidden"></div>
+    </div>
+  </section>
+
+  <section id="app-screen" class="screen app">
+    <aside class="rail">
+      <button id="nav-chat" class="rail-btn active" title="Chat">#</button>
+      <button id="nav-games" class="rail-btn" title="Games">G</button>
+      <button id="btn-admin-open" class="rail-btn admin" title="Admin menu">A</button>
+    </aside>
+
+    <aside class="sidebar">
+      <header class="sidebar-head">
+        <strong>Nexus</strong>
+        <span><span id="online-count">0</span> online</span>
+      </header>
+
+      <div class="section-row">
+        <span>Text rooms</span>
+        <button id="btn-new-room" class="tiny-btn">+</button>
+      </div>
+      <div id="room-list" class="room-list"></div>
+
+      <div class="section-row">
+        <span>Voice</span>
+      </div>
+      <button id="btn-join-call" class="voice-btn">Join General Call</button>
+
+      <footer class="userbar">
+        <div id="sidebar-avatar" class="avatar"></div>
+        <div class="userbar-name">
+          <strong id="sidebar-name"></strong>
+          <span>Online</span>
+        </div>
+        <button id="btn-logout" class="icon-btn">Out</button>
+      </footer>
+    </aside>
+
+    <main id="chat-view" class="main-view active">
+      <header class="topbar">
+        <button id="btn-mobile-menu" class="mobile-only icon-btn">Menu</button>
+        <strong># <span id="current-room-name">general</span></strong>
+        <span id="room-member-count"></span>
+      </header>
+      <div id="messages-area" class="messages"></div>
+      <div id="typing-indicator" class="typing hidden"></div>
+      <form id="message-form" class="message-form">
+        <input id="message-input" type="text" placeholder="Message #general" autocomplete="off" disabled>
+        <button id="btn-send" disabled>Send</button>
+      </form>
+    </main>
+
+    <main id="games-view" class="main-view">
+      <header class="topbar"><strong>Games</strong></header>
+      <div id="games-lobby" class="games-lobby">
+        <article class="game-card">
+          <h3>Chess</h3>
+          <p>Simple chess board for two players.</p>
+          <button data-type="chess" class="game-create primary-btn">Create chess</button>
+        </article>
+        <article class="game-card">
+          <h3>Tic Tac Toe</h3>
+          <p>Fast 3 in a row.</p>
+          <button data-type="tictactoe" class="game-create primary-btn">Create game</button>
+        </article>
+        <article class="game-card">
+          <h3>Connect Four</h3>
+          <p>Drop pieces and connect four.</p>
+          <button data-type="connect4" class="game-create primary-btn">Create game</button>
+        </article>
+        <div class="join-game">
+          <input id="join-game-id" type="text" placeholder="Game ID">
+          <button id="btn-join-game" class="primary-btn">Join</button>
+        </div>
+      </div>
+      <div id="game-area" class="game-area hidden"></div>
+    </main>
+
+    <aside class="rightbar">
+      <section id="call-area" class="call-area hidden">
+        <header>
+          <strong>General Call</strong>
+          <span id="current-call-id"></span>
+        </header>
+        <div id="video-grid" class="video-grid">
+          <div class="video-tile">
+            <video id="local-video" autoplay muted playsinline></video>
+            <span id="local-label">You</span>
+          </div>
+        </div>
+        <div class="call-controls">
+          <button id="btn-toggle-mic">Mic</button>
+          <button id="btn-toggle-cam">Cam</button>
+          <button id="btn-share-screen">Share</button>
+          <button id="btn-copy-call-id">Copy</button>
+          <button id="btn-leave-call" class="danger">Leave</button>
+        </div>
+      </section>
+      <section class="members">
+        <h3>Members</h3>
+        <div id="members-list"></div>
+      </section>
+    </aside>
+  </section>
+
+  <div id="room-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Create room</h2>
+      <input id="room-name" type="text" placeholder="Room name">
+      <label class="check-row"><input id="room-private" type="checkbox"> Private room</label>
+      <p class="hint">Public rooms show for everyone. Private rooms are only joinable from the ID shown after creating.</p>
+      <div class="modal-actions">
+        <button id="btn-room-cancel" class="ghost-btn">Cancel</button>
+        <button id="btn-room-create" class="primary-btn">Create</button>
       </div>
     </div>
-
-    <!-- Games view -->
-    <div id="view-games" class="dc-view">
-      <div class="dc-topbar">
-        <span class="dc-topbar-hash">🎮</span>
-        <span class="dc-topbar-name">Games</span>
-      </div>
-      <div id="games-lobby" style="padding:1.5rem;overflow-y:auto;flex:1;">
-        <div class="dc-games-grid">
-          <div class="dc-game-card"><div class="dc-game-icon">♟</div><h3>Chess</h3><p>Classic strategy</p><button class="btn-primary game-create-btn" data-type="chess">Create Game</button></div>
-          <div class="dc-game-card"><div class="dc-game-icon">✕○</div><h3>Tic-Tac-Toe</h3><p>Quick 3-in-a-row</p><button class="btn-primary game-create-btn" data-type="tictactoe">Create Game</button></div>
-          <div class="dc-game-card"><div class="dc-game-icon">🟡</div><h3>Connect Four</h3><p>Drop to win</p><button class="btn-primary game-create-btn" data-type="connect4">Create Game</button></div>
-        </div>
-        <div class="dc-join-game">
-          <input type="text" id="join-game-id" placeholder="Enter Game ID" maxlength="10" style="text-transform:uppercase">
-          <button id="btn-join-game" class="btn-primary">Join Game →</button>
-        </div>
-      </div>
-      <div id="game-area" style="display:none;padding:1.5rem;flex-direction:column;gap:1rem;overflow-y:auto;flex:1;"></div>
-    </div>
-
   </div>
 
-  <!-- Right panel -->
-  <div class="dc-right">
-
-    <!-- Call area -->
-    <div id="call-area" class="dc-call" style="display:none">
-      <div class="dc-call-top">
-        <div class="dc-call-status">🔊 Voice Connected</div>
-        <div class="dc-call-idrow">
-          <span id="current-call-id" class="dc-call-badge"></span>
-          <button id="btn-copy-call-id" class="dc-sm-btn">Copy ID</button>
-        </div>
+  <div id="admin-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Admin menu</h2>
+      <p class="hint">Enter the 4 digit PIN.</p>
+      <input id="admin-pin" type="password" inputmode="numeric" maxlength="4" placeholder="PIN">
+      <div class="modal-actions">
+        <button id="btn-admin-cancel" class="ghost-btn">Cancel</button>
+        <button id="btn-admin-unlock" class="primary-btn">Unlock</button>
       </div>
-      <div id="video-grid" class="dc-video-grid">
-        <div class="dc-vtile local-tile">
-          <video id="local-video" autoplay muted playsinline></video>
-          <div class="dc-vlabel" id="local-label">You</div>
-        </div>
-      </div>
-      <div class="dc-call-ctrls">
-        <button id="btn-toggle-mic" class="dc-ctrl active" title="Mute/Unmute">🎤</button>
-        <button id="btn-toggle-cam" class="dc-ctrl" title="Camera">📷</button>
-        <button id="btn-share-screen" class="dc-ctrl" title="Share Screen">🖥</button>
-        <button id="btn-leave-call" class="dc-ctrl leave" title="Leave Call">📵</button>
-      </div>
+      <div id="admin-error" class="error hidden"></div>
     </div>
-
-    <!-- Members -->
-    <div class="dc-members">
-      <div class="dc-members-title">MEMBERS — <span id="online-count-2">0</span> ONLINE</div>
-      <div id="members-list" class="dc-members-list"></div>
-    </div>
-
   </div>
 
-</div>
-
-<div id="g_id_onload" data-client_id="REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID" data-callback="handleGoogleSignIn" data-auto_prompt="false" style="display:none"></div>
-<script src="https://accounts.google.com/gsi/client" async></script>
-<script src="/socket.io/socket.io.js"></script>
-<script src="/js/app.js"></script>
+  <div id="g_id_onload"
+    data-client_id="707884755832-fudsvdqb0ufm7isbfo0030v56psddksn.apps.googleusercontent.com"
+    data-callback="handleGoogleSignIn"
+    data-auto_prompt="false"
+    style="display:none"></div>
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
 </body>
 </html>
