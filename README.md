@@ -21,6 +21,12 @@ Admin flow:
 3. Enter your 4 digit PIN.
 4. The admin page opens at `/admin.html`.
 
+Theme flow:
+
+1. Click the `T` button in the left rail.
+2. Pick a theme.
+3. The theme is saved in the browser and on your account while the server is running.
+
 Railway:
 
 - Source repo: `snabagustav/nexus-chat-app`

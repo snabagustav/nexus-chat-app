@@ -41,8 +41,8 @@ const rooms = new Map([
   ['general', { id: 'general', name: 'General', private: false, ownerId: null, messages: [], members: new Set() }],
 ]);
 
-function sign(user) {
-  return jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' });
+function sign(user, admin = false) {
+  return jwt.sign({ id: user.id, admin: !!admin }, JWT_SECRET, { expiresIn: '30d' });
 }
 
 function verify(token) {
@@ -52,7 +52,9 @@ function verify(token) {
 function userFromReq(req) {
   const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
   const decoded = verify(token);
-  return decoded ? users.get(decoded.id) : null;
+  const user = decoded ? users.get(decoded.id) : null;
+  if (user && decoded.admin) adminSessions.add(user.id);
+  return user;
 }
 
 function roleOf(user) {
@@ -215,7 +217,7 @@ app.post('/api/admin/unlock-pin', (req, res) => {
   }
   failedPins.delete(user.id);
   adminSessions.add(user.id);
-  res.json({ success: true, user: safeUser(user) });
+  res.json({ success: true, token: sign(user, true), user: safeUser(user) });
 });
 
 app.get('/api/rooms', (req, res) => {
@@ -283,6 +285,7 @@ io.use((socket, next) => {
   const decoded = verify(socket.handshake.auth.token);
   const user = decoded ? users.get(decoded.id) : null;
   if (!user) return next(new Error('Unauthorized'));
+  if (decoded.admin) adminSessions.add(user.id);
   socket.userFull = user;
   socket.user = safeUser(user);
   next();

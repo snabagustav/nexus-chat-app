@@ -712,7 +712,7 @@ function showMain(view) {
 function bindThemeAndAdmin() {
   $('btn-theme-open').addEventListener('click', () => $('theme-modal').classList.remove('hidden'));
   $('btn-theme-close').addEventListener('click', () => $('theme-modal').classList.add('hidden'));
-  document.querySelectorAll('[data-theme]').forEach(button => {
+  document.querySelectorAll('.theme-grid button[data-theme]').forEach(button => {
     button.addEventListener('click', () => {
       applyTheme(button.dataset.theme);
       $('theme-modal').classList.add('hidden');
@@ -740,8 +740,7 @@ async function unlockAdmin() {
       method: 'POST',
       body: JSON.stringify({ pin }),
     });
-    currentUser = data.user;
-    localStorage.setItem('nexus_user', JSON.stringify(currentUser));
+    saveSession(data);
     $('admin-modal').classList.add('hidden');
     location.href = '/admin.html';
   } catch (err) {
