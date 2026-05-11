@@ -1,37 +1,507 @@
 require('dotenv').config();
-const express=require('express'),http=require('http'),path=require('path'),jwt=require('jsonwebtoken'),bcrypt=require('bcryptjs'),crypto=require('crypto');
-const{Server}=require('socket.io');const{v4:uuid}=require('uuid');
-const app=express(),server=http.createServer(app),io=new Server(server,{cors:{origin:'*'},transports:['polling'],pingTimeout:60000});
-app.use(express.json());app.use(express.static(path.join(__dirname,'../public')));app.set('trust proxy',1);
-const SECRET=process.env.JWT_SECRET||'dev_secret',ADMIN_EMAIL=process.env.ADMIN_EMAIL||'gustavenglund69@gmail.com',ADMIN_PIN_HASH=process.env.ADMIN_PIN_HASH||'';
-const users=new Map(),emails=new Map(),mods=new Set(),muted=new Set(),banned=new Set(),admins=new Set(),online=new Map(),calls=new Map(),games=new Map(),pinAttempts=new Map();
-const rooms=new Map([['general',{id:'general',name:'General',private:false,messages:[],members:new Set()}]]);
-const sign=u=>jwt.sign({id:u.id},SECRET,{expiresIn:'30d'}),ver=t=>{try{return jwt.verify(t,SECRET)}catch{return null}},getUser=req=>{let d=ver(req.headers.authorization?.split(' ')[1]);return d&&users.get(d.id)};
-const role=u=>u&&(u.email===ADMIN_EMAIL||admins.has(u.id))?'admin':u&&mods.has(u.id)?'moderator':'user';
-const safe=u=>({id:u.id,username:u.username,email:u.email,avatar:u.avatar,picture:u.picture,role:role(u),theme:u.theme||'midnight',muted:muted.has(u.id),banned:u.email?banned.has(u.email):false});
-const need=(kind)=>(req,res,next)=>{let u=getUser(req);if(!u)return res.status(401).json({error:'Unauthorized'});let r=role(u);if(kind==='admin'&&r!=='admin')return res.status(403).json({error:'Admin only'});if(kind==='mod'&&!['admin','moderator'].includes(r))return res.status(403).json({error:'Mod only'});req.user=u;next()};
-app.post('/api/auth/register',async(req,res)=>{let username=String(req.body.username||'').trim(),email=String(req.body.email||'').toLowerCase().trim(),password=String(req.body.password||'');if(!username||!email||password.length<6)return res.status(400).json({error:'Fill in all fields'});if(emails.has(email))return res.status(400).json({error:'Email exists'});let u={id:uuid(),username,email,avatar:username[0].toUpperCase(),passwordHash:await bcrypt.hash(password,10),theme:'midnight'};users.set(u.id,u);emails.set(email,u.id);res.json({token:sign(u),user:safe(u)})});
-app.post('/api/auth/login',async(req,res)=>{let email=String(req.body.email||'').toLowerCase().trim(),u=users.get(emails.get(email));if(!u||!await bcrypt.compare(String(req.body.password||''),u.passwordHash||''))return res.status(401).json({error:'Invalid login'});if(banned.has(email))return res.status(403).json({error:'Banned'});res.json({token:sign(u),user:safe(u)})});
-app.post('/api/auth/anonymous',(req,res)=>{let username=String(req.body.username||'').trim();if(username.length<2)return res.status(400).json({error:'Enter a name'});let u={id:'anon_'+uuid(),username,email:null,avatar:username[0].toUpperCase(),theme:'midnight'};users.set(u.id,u);res.json({token:sign(u),user:safe(u)})});
-app.post('/api/auth/google',(req,res)=>{let email=String(req.body.email||'').toLowerCase().trim(),name=String(req.body.name||'Google User').trim();if(!email)return res.status(400).json({error:'Invalid Google'});let u=users.get(emails.get(email));if(!u){u={id:'google_'+String(req.body.googleId||uuid()),username:name,email,avatar:name[0].toUpperCase(),picture:req.body.picture,theme:'midnight'};users.set(u.id,u);emails.set(email,u.id)}res.json({token:sign(u),user:safe(u)})});
-app.post('/api/user/theme',(req,res)=>{let u=getUser(req);if(!u)return res.status(401).json({error:'Unauthorized'});u.theme=String(req.body.theme||'midnight');res.json({success:true,user:safe(u)})});
-app.post('/api/admin/unlock-pin',(req,res)=>{let u=getUser(req);if(!u)return res.status(401).json({error:'Login first'});if(!ADMIN_PIN_HASH)return res.status(503).json({error:'Admin PIN is not configured on the server'});let now=Date.now(),a=pinAttempts.get(u.id)||{count:0,until:0};if(a.until>now)return res.status(429).json({error:'Too many wrong PIN attempts. Wait a bit.'});let entered=String(req.body.pin||''),hash=crypto.createHash('sha256').update(entered).digest('hex');let ok=false;try{ok=crypto.timingSafeEqual(Buffer.from(hash,'hex'),Buffer.from(ADMIN_PIN_HASH,'hex'))}catch{ok=false}if(!ok){a.count++;if(a.count>=5){a.count=0;a.until=now+10*60*1000}pinAttempts.set(u.id,a);return res.status(403).json({error:'Wrong PIN'})}pinAttempts.delete(u.id);admins.add(u.id);res.json({success:true,user:safe(u)})});
-app.get('/api/rooms',(req,res)=>res.json([...rooms.values()].filter(r=>!r.private).map(r=>({id:r.id,name:r.name,private:r.private,memberCount:r.members.size}))));
-app.get('/api/admin/stats',need('mod'),(req,res)=>res.json({totalUsers:users.size,onlineUsers:online.size,totalRooms:rooms.size,totalMessages:[...rooms.values()].reduce((a,r)=>a+r.messages.length,0),games:games.size,muted:muted.size,mods:mods.size}));
-app.get('/api/admin/users',need('admin'),(req,res)=>res.json([...users.values()].map(safe)));
-app.get('/api/admin/rooms',need('admin'),(req,res)=>res.json([...rooms.values()].map(r=>({id:r.id,name:r.name,private:r.private,memberCount:r.members.size,messageCount:r.messages.length}))));
-app.post('/api/admin/mute',need('mod'),(req,res)=>{muted.add(req.body.userId);res.json({success:true})});app.post('/api/admin/unmute',need('mod'),(req,res)=>{muted.delete(req.body.userId);res.json({success:true})});
-app.post('/api/admin/kick',need('mod'),(req,res)=>{kick(req.body.userId,'You were kicked');res.json({success:true})});app.post('/api/admin/ban',need('mod'),(req,res)=>{let u=users.get(req.body.userId);if(u?.email)banned.add(u.email);kick(req.body.userId,'You were banned');res.json({success:true})});app.post('/api/admin/unban',need('mod'),(req,res)=>{let u=users.get(req.body.userId);if(u?.email)banned.delete(u.email);res.json({success:true})});
-app.post('/api/admin/add-mod',need('admin'),(req,res)=>{mods.add(req.body.userId);res.json({success:true})});app.post('/api/admin/remove-mod',need('admin'),(req,res)=>{mods.delete(req.body.userId);res.json({success:true})});
-app.post('/api/admin/clear-room',need('mod'),(req,res)=>{let r=rooms.get(req.body.roomId);if(r)r.messages=[];io.to(req.body.roomId).emit('room_cleared');res.json({success:true})});app.post('/api/admin/rename-room',need('admin'),(req,res)=>{let r=rooms.get(req.body.roomId),name=String(req.body.name||'').trim().slice(0,32);if(r&&name.length>1){r.name=name;io.emit('rooms_updated')}res.json({success:true})});app.post('/api/admin/delete-room',need('admin'),(req,res)=>{let id=req.body.roomId;if(id!=='general')rooms.delete(id);io.emit('rooms_updated');res.json({success:true})});
-io.use((s,n)=>{let d=ver(s.handshake.auth.token),u=d&&users.get(d.id);if(!u)return n(new Error('Unauthorized'));s.userFull=u;s.user=safe(u);n()});
-io.on('connection',s=>{let u=s.userFull;online.set(s.id,{userId:u.id,roomId:null});io.emit('online_count',online.size);
-s.on('join_room',id=>{let r=rooms.get(id);if(!r)return;leaveRoom(s);s.join(id);r.members.add(s.id);online.get(s.id).roomId=id;s.emit('room_history',r.messages.slice(-100));io.to(id).emit('room_members',members(id))});
-s.on('create_room',d=>{let name=String(d.name||'').trim().slice(0,32);if(name.length<2)return;let r={id:uuid().slice(0,8),name,private:!!d.private,messages:[],members:new Set()};rooms.set(r.id,r);io.emit('rooms_updated');s.emit('room_created',{id:r.id,name:r.name,private:r.private})});
-s.on('send_message',d=>{let r=rooms.get(d.roomId),content=String(d.content||'').trim().slice(0,500);if(!r||!content||muted.has(u.id))return;let m={id:uuid(),userId:u.id,username:u.username,avatar:u.avatar,content,timestamp:Date.now(),roomId:r.id,role:role(u)};r.messages.push(m);io.to(r.id).emit('new_message',m)});
-s.on('typing',d=>s.to(d.roomId).emit('user_typing',{username:u.username,typing:!!d.typing}));s.on('mod_delete_message',d=>{if(!['admin','moderator'].includes(role(u)))return;let r=rooms.get(d.roomId);if(r)r.messages=r.messages.filter(m=>m.id!==d.messageId);io.to(d.roomId).emit('message_deleted',{messageId:d.messageId})});
-s.on('call_join',d=>{let id=String(d.callId||'general');if(!calls.has(id))calls.set(id,new Set());let peers=[...calls.get(id)];calls.get(id).add(s.id);s.join('call_'+id);peers.forEach(p=>io.to(p).emit('call_peer_joined',{peerId:s.id,username:u.username}));s.emit('call_existing_peers',{peers,callId:id})});s.on('call_offer',d=>io.to(d.to).emit('call_offer',{from:s.id,offer:d.offer,username:u.username}));s.on('call_answer',d=>io.to(d.to).emit('call_answer',{from:s.id,answer:d.answer}));s.on('call_ice',d=>io.to(d.to).emit('call_ice',{from:s.id,candidate:d.candidate}));s.on('call_leave',d=>leaveCall(s,d.callId));
-s.on('game_create',d=>{let g=createGame(d.type,u);games.set(g.id,g);s.join('game_'+g.id);s.emit('game_created',{game:g})});s.on('game_join',d=>{let g=games.get(String(d.gameId||'').toUpperCase());if(!g||g.players.length>=2)return s.emit('game_error','Game not found or full');g.players.push({id:u.id,username:u.username});g.status='playing';s.join('game_'+g.id);io.to('game_'+g.id).emit('game_updated',g)});s.on('game_move',d=>{let g=games.get(d.gameId);if(!g)return;let e=move(g,d.move,u.id);if(e)return s.emit('game_error',e);io.to('game_'+g.id).emit('game_updated',g)});s.on('disconnect',()=>{leaveRoom(s);calls.forEach((_,id)=>leaveCall(s,id));online.delete(s.id);io.emit('online_count',online.size)})});
-function kick(id,reason){for(let[sid,i]of online)if(i.userId===id)io.to(sid).emit('force_logout',{reason})}function leaveRoom(s){let i=online.get(s.id);if(!i?.roomId)return;rooms.get(i.roomId)?.members.delete(s.id);io.to(i.roomId).emit('room_members',members(i.roomId));s.leave(i.roomId);i.roomId=null}function members(id){return[...(rooms.get(id)?.members||[])].map(sid=>users.get(online.get(sid)?.userId)).filter(Boolean).map(safe)}function leaveCall(s,id){let set=calls.get(id);if(!set)return;set.delete(s.id);s.leave('call_'+id);io.to('call_'+id).emit('call_peer_left',{peerId:s.id});if(!set.size)calls.delete(id)}
-function createGame(type,u){let id=uuid().slice(0,6).toUpperCase(),base={id,type,players:[{id:u.id,username:u.username}],status:'waiting',turn:0,winner:null};if(type==='connect4')return{...base,board:Array(42).fill(null)};if(type==='rps')return{...base,choices:{}};if(type==='memory')return{...base,board:[...Array(8).keys(),...Array(8).keys()].sort(()=>Math.random()-.5),flipped:[],matched:[],scores:[0,0]};return{...base,type:'tictactoe',board:Array(9).fill(null)}}function move(g,m,uid){let p=g.players.findIndex(x=>x.id===uid);if(p<0)return'Not a player';if(g.status!=='playing')return'Game not active';if(g.type==='rps'){g.choices[uid]=m.choice;if(Object.keys(g.choices).length===2){let a=g.choices[g.players[0].id],b=g.choices[g.players[1].id];g.winner=a===b?'draw':(a==='rock'&&b==='scissors'||a==='paper'&&b==='rock'||a==='scissors'&&b==='paper')?0:1;g.status='ended'}return null}if(g.turn%2!==p)return'Not your turn';if(g.type==='connect4'){let c=+m.col,row=-1;for(let r=5;r>=0;r--)if(g.board[r*7+c]===null){row=r;break}if(row<0)return'Column full';g.board[row*7+c]=p;g.turn++;if(win4(g.board,row,c,p)){g.winner=p;g.status='ended'}return null}if(g.type==='memory'){let i=+m.index;if(g.matched.includes(i)||g.flipped.includes(i))return'Invalid';g.flipped.push(i);if(g.flipped.length===2){let[a,b]=g.flipped;if(g.board[a]===g.board[b]){g.matched.push(a,b);g.scores[p]++;if(g.matched.length===g.board.length){g.winner=g.scores[0]===g.scores[1]?'draw':g.scores[0]>g.scores[1]?0:1;g.status='ended'}}else g.turn++;setTimeout(()=>{g.flipped=[];io.to('game_'+g.id).emit('game_updated',g)},800)}return null}let i=+m.index;if(g.board[i]!==null)return'Taken';g.board[i]=p;g.turn++;let w=win3(g.board);if(w!==null){g.winner=w;g.status='ended'}return null}function win3(b){for(let l of[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]])if(b[l[0]]!==null&&b[l[0]]===b[l[1]]&&b[l[0]]===b[l[2]])return b[l[0]];return null}function win4(b,r,c,p){for(let[dR,dC]of[[0,1],[1,0],[1,1],[1,-1]]){let n=1;for(let d=1;d<4;d++){let rr=r+dR*d,cc=c+dC*d;if(rr<0||rr>5||cc<0||cc>6||b[rr*7+cc]!==p)break;n++}for(let d=1;d<4;d++){let rr=r-dR*d,cc=c-dC*d;if(rr<0||rr>5||cc<0||cc>6||b[rr*7+cc]!==p)break;n++}if(n>=4)return true}return false}
-server.listen(process.env.PORT||3000,()=>console.log('Nexus Chat App running'));
+
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const { Server } = require('socket.io');
+const { v4: uuid } = require('uuid');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+  transports: ['polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+});
+
+app.use(express.json());
+app.set('trust proxy', 1);
+app.use(express.static(path.join(__dirname, '../public')));
+
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
+const ADMIN_PIN_HASH = process.env.ADMIN_PIN_HASH || '';
+
+const users = new Map();
+const emails = new Map();
+const adminSessions = new Set();
+const moderators = new Set();
+const mutedUsers = new Set();
+const bannedEmails = new Set();
+const onlineUsers = new Map();
+const callRooms = new Map();
+const games = new Map();
+const failedPins = new Map();
+const swearCooldowns = new Map();
+
+const rooms = new Map([
+  ['general', { id: 'general', name: 'General', private: false, ownerId: null, messages: [], members: new Set() }],
+]);
+
+function sign(user) {
+  return jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '30d' });
+}
+
+function verify(token) {
+  try { return jwt.verify(token, JWT_SECRET); } catch { return null; }
+}
+
+function userFromReq(req) {
+  const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
+  const decoded = verify(token);
+  return decoded ? users.get(decoded.id) : null;
+}
+
+function roleOf(user) {
+  if (!user) return 'user';
+  if (adminSessions.has(user.id)) return 'admin';
+  if (moderators.has(user.id)) return 'moderator';
+  return 'user';
+}
+
+function isMod(user) {
+  const role = roleOf(user);
+  return role === 'admin' || role === 'moderator';
+}
+
+function safeUser(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    avatar: user.avatar,
+    picture: user.picture,
+    anon: !!user.anon,
+    role: roleOf(user),
+    theme: user.theme || 'midnight',
+    muted: mutedUsers.has(user.id),
+    banned: user.email ? bannedEmails.has(user.email) : false,
+  };
+}
+
+function requireAdmin(req, res, next) {
+  const user = userFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (roleOf(user) !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  req.user = user;
+  next();
+}
+
+function requireMod(req, res, next) {
+  const user = userFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!isMod(user)) return res.status(403).json({ error: 'Moderator only' });
+  req.user = user;
+  next();
+}
+
+function verifyAdminPin(pin) {
+  const parts = ADMIN_PIN_HASH.split('$');
+  if (parts.length !== 4 || parts[0] !== 'pbkdf2_sha256') return false;
+  const iterations = Number(parts[1]);
+  const salt = parts[2];
+  const expected = parts[3];
+  if (!iterations || !salt || !expected) return false;
+  const actual = crypto.pbkdf2Sync(String(pin || ''), salt, iterations, 32, 'sha256').toString('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'));
+  } catch {
+    return false;
+  }
+}
+
+function containsBlockedWord(text) {
+  return /\b(fuck|shit|bitch|cunt|nigger|nigga|faggot|retard|kys)\b/i.test(String(text || ''));
+}
+
+app.post('/api/auth/register', async (req, res) => {
+  const username = String(req.body.username || '').trim().slice(0, 32);
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+  if (!username || !email || password.length < 6) return res.status(400).json({ error: 'Fill in all fields' });
+  if (emails.has(email)) return res.status(400).json({ error: 'Email already exists' });
+  if (bannedEmails.has(email)) return res.status(403).json({ error: 'This account is banned' });
+  const user = {
+    id: uuid(),
+    username,
+    email,
+    avatar: username[0].toUpperCase(),
+    passwordHash: await bcrypt.hash(password, 10),
+    theme: 'midnight',
+    createdAt: Date.now(),
+  };
+  users.set(user.id, user);
+  emails.set(email, user.id);
+  res.json({ token: sign(user), user: safeUser(user) });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+  const user = users.get(emails.get(email));
+  if (!user || !await bcrypt.compare(password, user.passwordHash || '')) return res.status(401).json({ error: 'Invalid login' });
+  if (bannedEmails.has(email)) return res.status(403).json({ error: 'This account is banned' });
+  res.json({ token: sign(user), user: safeUser(user) });
+});
+
+app.post('/api/auth/anonymous', (req, res) => {
+  const username = String(req.body.username || '').trim().slice(0, 32);
+  if (username.length < 2) return res.status(400).json({ error: 'Enter a display name' });
+  const user = { id: 'anon_' + uuid(), username, email: null, avatar: username[0].toUpperCase(), anon: true, theme: 'midnight', createdAt: Date.now() };
+  users.set(user.id, user);
+  res.json({ token: sign(user), user: safeUser(user) });
+});
+
+app.post('/api/auth/google', (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const name = String(req.body.name || 'Google User').trim().slice(0, 32);
+  const googleId = String(req.body.googleId || uuid());
+  if (!email) return res.status(400).json({ error: 'Invalid Google login' });
+  if (bannedEmails.has(email)) return res.status(403).json({ error: 'This account is banned' });
+  let user = users.get(emails.get(email));
+  if (!user) {
+    user = { id: 'google_' + googleId, username: name, email, avatar: name[0].toUpperCase(), picture: req.body.picture, theme: 'midnight', createdAt: Date.now() };
+    users.set(user.id, user);
+    emails.set(email, user.id);
+  }
+  res.json({ token: sign(user), user: safeUser(user) });
+});
+
+app.post('/api/user/theme', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  user.theme = String(req.body.theme || 'midnight');
+  res.json({ success: true, user: safeUser(user) });
+});
+
+app.post('/api/admin/unlock-pin', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Login first' });
+  if (!ADMIN_PIN_HASH) return res.status(503).json({ error: 'Admin PIN is not configured in Railway' });
+  const now = Date.now();
+  const attempt = failedPins.get(user.id) || { count: 0, until: 0 };
+  if (attempt.until > now) return res.status(429).json({ error: 'Too many wrong attempts. Wait 10 minutes.' });
+  if (!verifyAdminPin(req.body.pin)) {
+    attempt.count += 1;
+    if (attempt.count >= 5) {
+      attempt.count = 0;
+      attempt.until = now + 10 * 60 * 1000;
+    }
+    failedPins.set(user.id, attempt);
+    return res.status(403).json({ error: 'Wrong PIN' });
+  }
+  failedPins.delete(user.id);
+  adminSessions.add(user.id);
+  res.json({ success: true, user: safeUser(user) });
+});
+
+app.get('/api/rooms', (req, res) => {
+  res.json(Array.from(rooms.values()).filter(r => !r.private).map(r => ({
+    id: r.id, name: r.name, private: r.private, memberCount: r.members.size,
+  })));
+});
+
+app.get('/api/admin/stats', requireMod, (req, res) => {
+  res.json({
+    totalUsers: users.size,
+    onlineUsers: onlineUsers.size,
+    totalRooms: rooms.size,
+    totalMessages: Array.from(rooms.values()).reduce((sum, room) => sum + room.messages.length, 0),
+    games: games.size,
+    muted: mutedUsers.size,
+    mods: moderators.size,
+  });
+});
+
+app.get('/api/admin/users', requireAdmin, (req, res) => res.json(Array.from(users.values()).map(safeUser)));
+app.get('/api/admin/rooms', requireAdmin, (req, res) => res.json(Array.from(rooms.values()).map(r => ({
+  id: r.id, name: r.name, private: r.private, memberCount: r.members.size, messageCount: r.messages.length,
+}))));
+
+app.post('/api/admin/mute', requireMod, (req, res) => { mutedUsers.add(req.body.userId); res.json({ success: true }); });
+app.post('/api/admin/unmute', requireMod, (req, res) => { mutedUsers.delete(req.body.userId); res.json({ success: true }); });
+app.post('/api/admin/kick', requireMod, (req, res) => { kickUser(req.body.userId, 'You were kicked'); res.json({ success: true }); });
+app.post('/api/admin/ban', requireMod, (req, res) => {
+  const user = users.get(req.body.userId);
+  if (user && user.email) bannedEmails.add(user.email);
+  kickUser(req.body.userId, 'You were banned');
+  res.json({ success: true });
+});
+app.post('/api/admin/unban', requireMod, (req, res) => {
+  const user = users.get(req.body.userId);
+  if (user && user.email) bannedEmails.delete(user.email);
+  res.json({ success: true });
+});
+app.post('/api/admin/add-mod', requireAdmin, (req, res) => { moderators.add(req.body.userId); res.json({ success: true }); });
+app.post('/api/admin/remove-mod', requireAdmin, (req, res) => { moderators.delete(req.body.userId); res.json({ success: true }); });
+app.post('/api/admin/clear-room', requireMod, (req, res) => {
+  const room = rooms.get(req.body.roomId);
+  if (room) room.messages = [];
+  io.to(req.body.roomId).emit('room_cleared');
+  res.json({ success: true });
+});
+app.post('/api/admin/rename-room', requireAdmin, (req, res) => {
+  const room = rooms.get(req.body.roomId);
+  const name = String(req.body.name || '').trim().slice(0, 32);
+  if (!room || name.length < 2) return res.status(400).json({ error: 'Bad room' });
+  room.name = name;
+  io.emit('rooms_updated');
+  res.json({ success: true });
+});
+app.post('/api/admin/delete-room', requireAdmin, (req, res) => {
+  const id = req.body.roomId;
+  if (id === 'general') return res.status(403).json({ error: 'Cannot delete General' });
+  rooms.delete(id);
+  io.emit('rooms_updated');
+  res.json({ success: true });
+});
+
+io.use((socket, next) => {
+  const decoded = verify(socket.handshake.auth.token);
+  const user = decoded ? users.get(decoded.id) : null;
+  if (!user) return next(new Error('Unauthorized'));
+  socket.userFull = user;
+  socket.user = safeUser(user);
+  next();
+});
+
+io.on('connection', socket => {
+  const user = socket.userFull;
+  onlineUsers.set(socket.id, { userId: user.id, roomId: null });
+  io.emit('online_count', onlineUsers.size);
+
+  socket.on('join_room', roomId => {
+    const room = rooms.get(roomId);
+    if (!room) return socket.emit('error_msg', 'Room not found');
+    leaveTextRoom(socket);
+    socket.join(roomId);
+    room.members.add(socket.id);
+    onlineUsers.get(socket.id).roomId = roomId;
+    socket.emit('room_history', room.messages.slice(-100));
+    io.to(roomId).emit('room_members', roomMembers(roomId));
+  });
+
+  socket.on('create_room', data => {
+    const name = String(data.name || '').trim().slice(0, 32);
+    if (name.length < 2) return socket.emit('error_msg', 'Room name too short');
+    const room = { id: uuid().slice(0, 8), name, private: !!data.private, ownerId: user.id, messages: [], members: new Set() };
+    rooms.set(room.id, room);
+    io.emit('rooms_updated');
+    socket.emit('room_created', { id: room.id, name: room.name, private: room.private });
+  });
+
+  socket.on('send_message', data => {
+    const room = rooms.get(data.roomId);
+    const content = String(data.content || '').trim().slice(0, 500);
+    if (!room || !content) return;
+    if (mutedUsers.has(user.id)) return socket.emit('error_msg', 'You are muted');
+    const cooldownUntil = swearCooldowns.get(user.id) || 0;
+    if (!isMod(user) && cooldownUntil > Date.now()) {
+      const seconds = Math.ceil((cooldownUntil - Date.now()) / 1000);
+      return socket.emit('error_msg', `Language cooldown: wait ${seconds}s`);
+    }
+    if (!isMod(user) && containsBlockedWord(content)) {
+      swearCooldowns.set(user.id, Date.now() + 60 * 1000);
+      return socket.emit('error_msg', 'Message blocked. 60 second language cooldown started.');
+    }
+    const message = {
+      id: uuid(), userId: user.id, username: user.username, avatar: user.avatar,
+      content, timestamp: Date.now(), roomId: room.id, role: roleOf(user),
+    };
+    room.messages.push(message);
+    if (room.messages.length > 300) room.messages.shift();
+    io.to(room.id).emit('new_message', message);
+  });
+
+  socket.on('typing', data => socket.to(data.roomId).emit('user_typing', { username: user.username, typing: !!data.typing }));
+  socket.on('mod_delete_message', data => {
+    if (!isMod(user)) return;
+    const room = rooms.get(data.roomId);
+    if (!room) return;
+    room.messages = room.messages.filter(m => m.id !== data.messageId);
+    io.to(data.roomId).emit('message_deleted', { messageId: data.messageId });
+  });
+
+  socket.on('call_join', data => {
+    const callId = String(data.callId || 'general');
+    if (!callRooms.has(callId)) callRooms.set(callId, new Set());
+    const peers = Array.from(callRooms.get(callId));
+    const peerList = peers.map(peerId => {
+      const peerUser = users.get(onlineUsers.get(peerId)?.userId);
+      return { peerId, username: peerUser?.username || 'User', avatar: peerUser?.avatar || '?' };
+    });
+    callRooms.get(callId).add(socket.id);
+    socket.join('call_' + callId);
+    peers.forEach(peerId => io.to(peerId).emit('call_peer_joined', { peerId: socket.id, username: user.username, avatar: user.avatar }));
+    socket.emit('call_existing_peers', { peers: peerList, callId });
+  });
+  socket.on('call_offer', data => io.to(data.to).emit('call_offer', { from: socket.id, offer: data.offer, username: user.username, avatar: user.avatar }));
+  socket.on('call_answer', data => io.to(data.to).emit('call_answer', { from: socket.id, answer: data.answer }));
+  socket.on('call_ice', data => io.to(data.to).emit('call_ice', { from: socket.id, candidate: data.candidate }));
+  socket.on('call_leave', data => leaveCall(socket, data.callId));
+
+  socket.on('game_create', data => {
+    const game = createGame(data.type, user);
+    games.set(game.id, game);
+    socket.join('game_' + game.id);
+    socket.emit('game_created', { game });
+  });
+  socket.on('game_join', data => {
+    const game = games.get(String(data.gameId || '').toUpperCase());
+    if (!game || game.players.length >= 2) return socket.emit('game_error', 'Game not found or full');
+    game.players.push({ id: user.id, username: user.username });
+    game.status = 'playing';
+    socket.join('game_' + game.id);
+    io.to('game_' + game.id).emit('game_updated', game);
+  });
+  socket.on('game_move', data => {
+    const game = games.get(data.gameId);
+    if (!game) return;
+    const error = applyMove(game, data.move, user.id);
+    if (error) return socket.emit('game_error', error);
+    io.to('game_' + game.id).emit('game_updated', game);
+  });
+
+  socket.on('disconnect', () => {
+    leaveTextRoom(socket);
+    callRooms.forEach((_, callId) => leaveCall(socket, callId));
+    onlineUsers.delete(socket.id);
+    io.emit('online_count', onlineUsers.size);
+  });
+});
+
+function kickUser(userId, reason) {
+  for (const [socketId, info] of onlineUsers) {
+    if (info.userId === userId) io.to(socketId).emit('force_logout', { reason });
+  }
+}
+
+function leaveTextRoom(socket) {
+  const info = onlineUsers.get(socket.id);
+  if (!info || !info.roomId) return;
+  const room = rooms.get(info.roomId);
+  if (room) {
+    room.members.delete(socket.id);
+    io.to(info.roomId).emit('room_members', roomMembers(info.roomId));
+  }
+  socket.leave(info.roomId);
+  info.roomId = null;
+}
+
+function roomMembers(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return [];
+  return Array.from(room.members).map(socketId => users.get(onlineUsers.get(socketId)?.userId)).filter(Boolean).map(safeUser);
+}
+
+function leaveCall(socket, callId) {
+  const set = callRooms.get(callId);
+  if (!set) return;
+  set.delete(socket.id);
+  socket.leave('call_' + callId);
+  io.to('call_' + callId).emit('call_peer_left', { peerId: socket.id });
+  if (!set.size) callRooms.delete(callId);
+}
+
+function createGame(type, user) {
+  const id = uuid().slice(0, 6).toUpperCase();
+  const base = { id, type, players: [{ id: user.id, username: user.username }], status: 'waiting', turn: 0, winner: null };
+  if (type === 'connect4') return { ...base, board: Array(42).fill(null) };
+  if (type === 'rps') return { ...base, choices: {} };
+  if (type === 'memory') return { ...base, board: [...Array(8).keys(), ...Array(8).keys()].sort(() => Math.random() - 0.5), flipped: [], matched: [], scores: [0, 0] };
+  return { ...base, type: 'tictactoe', board: Array(9).fill(null) };
+}
+
+function applyMove(game, move, userId) {
+  const player = game.players.findIndex(p => p.id === userId);
+  if (player < 0) return 'Not a player';
+  if (game.status !== 'playing') return 'Game not active';
+  if (game.type === 'rps') {
+    game.choices[userId] = move.choice;
+    if (Object.keys(game.choices).length === 2) {
+      const a = game.choices[game.players[0].id];
+      const b = game.choices[game.players[1].id];
+      game.winner = a === b ? 'draw' : ((a === 'rock' && b === 'scissors') || (a === 'paper' && b === 'rock') || (a === 'scissors' && b === 'paper')) ? 0 : 1;
+      game.status = 'ended';
+    }
+    return null;
+  }
+  if (game.turn % 2 !== player) return 'Not your turn';
+  if (game.type === 'connect4') return moveConnect4(game, move, player);
+  if (game.type === 'memory') return moveMemory(game, move, player);
+  return moveTtt(game, move, player);
+}
+
+function moveTtt(game, move, player) {
+  const index = Number(move.index);
+  if (index < 0 || index > 8 || game.board[index] !== null) return 'Taken';
+  game.board[index] = player;
+  game.turn += 1;
+  const winner = winTtt(game.board);
+  if (winner !== null) { game.winner = winner; game.status = 'ended'; }
+  else if (game.turn >= 9) { game.winner = 'draw'; game.status = 'ended'; }
+  return null;
+}
+
+function moveConnect4(game, move, player) {
+  const col = Number(move.col);
+  let row = -1;
+  for (let r = 5; r >= 0; r--) if (game.board[r * 7 + col] === null) { row = r; break; }
+  if (row < 0) return 'Column full';
+  game.board[row * 7 + col] = player;
+  game.turn += 1;
+  if (winC4(game.board, row, col, player)) { game.winner = player; game.status = 'ended'; }
+  else if (game.turn >= 42) { game.winner = 'draw'; game.status = 'ended'; }
+  return null;
+}
+
+function moveMemory(game, move, player) {
+  const index = Number(move.index);
+  if (game.matched.includes(index) || game.flipped.includes(index)) return 'Invalid';
+  game.flipped.push(index);
+  if (game.flipped.length === 2) {
+    const [a, b] = game.flipped;
+    if (game.board[a] === game.board[b]) {
+      game.matched.push(a, b);
+      game.scores[player] += 1;
+      if (game.matched.length === game.board.length) {
+        game.winner = game.scores[0] === game.scores[1] ? 'draw' : game.scores[0] > game.scores[1] ? 0 : 1;
+        game.status = 'ended';
+      }
+    } else {
+      game.turn += 1;
+    }
+    setTimeout(() => { game.flipped = []; io.to('game_' + game.id).emit('game_updated', game); }, 800);
+  }
+  return null;
+}
+
+function winTtt(board) {
+  for (const line of [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]) {
+    if (board[line[0]] !== null && board[line[0]] === board[line[1]] && board[line[0]] === board[line[2]]) return board[line[0]];
+  }
+  return null;
+}
+
+function winC4(board, row, col, player) {
+  for (const [dr, dc] of [[0,1],[1,0],[1,1],[1,-1]]) {
+    let count = 1;
+    for (let d = 1; d < 4; d++) {
+      const r = row + dr * d, c = col + dc * d;
+      if (r < 0 || r > 5 || c < 0 || c > 6 || board[r * 7 + c] !== player) break;
+      count++;
+    }
+    for (let d = 1; d < 4; d++) {
+      const r = row - dr * d, c = col - dc * d;
+      if (r < 0 || r > 5 || c < 0 || c > 6 || board[r * 7 + c] !== player) break;
+      count++;
+    }
+    if (count >= 4) return true;
+  }
+  return false;
+}
+
+server.listen(process.env.PORT || 3000, () => console.log('Nexus Chat App running'));

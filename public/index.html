@@ -1,8 +1,196 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Nexus Chat App</title><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;800;900&display=swap" rel="stylesheet"><link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/call-strip.css"></head><body>
-<section id="auth-screen" class="screen active"><div class="login-art"><div class="hero"></div></div><div class="auth-card"><div class="brand"><div>N</div><section><h1>Nexus Chat App</h1><p>Chat, call, theme and play together.</p></section></div><div class="tabs"><button class="tab active" data-tab="login">Login</button><button class="tab" data-tab="register">Register</button></div><div id="tab-login" class="form active"><button id="btn-google" class="white">Continue with Google</button><input id="login-email" placeholder="Email"><input id="login-password" type="password" placeholder="Password"><button id="btn-login">Sign in</button><button id="btn-anon-toggle" class="ghost">Anonymous</button><div id="anon-form" class="hidden"><input id="anon-name" placeholder="Display name"><button id="btn-anon">Enter</button></div></div><div id="tab-register" class="form"><input id="reg-username" placeholder="Display name"><input id="reg-email" placeholder="Email"><input id="reg-password" type="password" placeholder="Password"><button id="btn-register">Create account</button></div><div id="auth-error" class="error hidden"></div></div></section>
-<section id="app-screen" class="screen app"><aside class="rail"><div class="logo">N</div><button id="nav-chat" class="active">#</button><button id="nav-games">G</button><button id="btn-theme-open">T</button><button id="btn-admin-open" class="admin">A</button></aside><aside class="side"><header><b>Nexus Chat App</b><small><span id="online-count">0</span> online</small></header><div class="row"><span>Rooms</span><button id="btn-new-room">+</button></div><div id="room-list"></div><div class="row"><span>Voice</span></div><button id="btn-join-call" class="voice"><i></i>Join General Call</button><footer><div id="sidebar-avatar" class="avatar"></div><div><b id="sidebar-name"></b><small>Online</small></div><button id="btn-logout">Out</button></footer></aside>
-<main id="chat-view" class="view active"><header class="top"><button id="btn-mobile-menu">Menu</button><b># <span id="current-room-name">general</span></b><small id="room-member-count"></small></header><div id="messages-area" class="messages"></div><div id="typing-indicator" class="typing hidden"></div><form id="message-form"><input id="message-input" placeholder="Message" disabled><button id="btn-send" disabled>Send</button></form></main>
-<main id="games-view" class="view"><header class="top"><b>Activities</b></header><div id="games-lobby" class="games"><article><h3>Tic Tac Toe</h3><p>Fast duel.</p><button class="game-create" data-type="tictactoe">Create</button></article><article><h3>Connect Four</h3><p>Drop pieces together.</p><button class="game-create" data-type="connect4">Create</button></article><article><h3>Rock Paper Scissors</h3><p>Quick party game.</p><button class="game-create" data-type="rps">Create</button></article><article><h3>Memory Match</h3><p>Shared card matching.</p><button class="game-create" data-type="memory">Create</button></article><div class="join"><input id="join-game-id" placeholder="Game ID"><button id="btn-join-game">Join</button></div></div><div id="game-area" class="game-area hidden"></div></main>
-<aside class="right"><section id="call-area" class="call hidden"><header><div><b>General Call</b><small>Voice connected</small></div><small id="current-call-id"></small></header><div id="video-grid" class="videos"><div class="tile"><video id="local-video" autoplay muted playsinline></video><span id="local-label">You</span></div></div><div class="callbar"><button id="btn-toggle-mic">Mute</button><button id="btn-deafen">Deafen</button><button id="btn-toggle-cam">Video</button><button id="btn-share-screen">Screen</button><button id="btn-copy-call-id">Invite</button><button id="btn-leave-call" class="danger">Leave</button></div></section><section class="members"><h3>Members</h3><div id="members-list"></div></section></aside></section>
-<div id="room-modal" class="modal hidden"><div><h2>Create room</h2><input id="room-name" placeholder="Room name"><label><input id="room-private" type="checkbox"> Private room</label><button id="btn-room-cancel" class="ghost">Cancel</button><button id="btn-room-create">Create</button></div></div><div id="admin-modal" class="modal hidden"><div><h2>Admin menu</h2><input id="admin-pin" maxlength="4" placeholder="PIN"><button id="btn-admin-cancel" class="ghost">Cancel</button><button id="btn-admin-unlock">Unlock</button><div id="admin-error" class="error hidden"></div></div></div><div id="theme-modal" class="modal hidden"><div><h2>Themes</h2><div class="theme-grid"><button data-theme="midnight">Midnight</button><button data-theme="violet">Violet</button><button data-theme="ocean">Ocean</button><button data-theme="ember">Ember</button><button data-theme="forest">Forest</button></div><button id="btn-theme-close" class="ghost">Close</button></div></div>
-<div id="g_id_onload" data-client_id="707884755832-fudsvdqb0ufm7isbfo0030v56psddksn.apps.googleusercontent.com" data-callback="handleGoogleSignIn" data-auto_prompt="false"></div><script src="https://accounts.google.com/gsi/client" async></script><script src="/socket.io/socket.io.js"></script><script src="/js/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nexus Chat App</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body data-theme="midnight">
+  <section id="auth-screen" class="auth-screen screen active">
+    <div class="auth-art">
+      <div class="auth-grid"></div>
+      <div class="auth-figure"></div>
+    </div>
+    <div class="auth-card">
+      <div class="brand-row">
+        <div class="brand-mark">N</div>
+        <div>
+          <h1>Nexus Chat App</h1>
+          <p>Chat, calls, rooms, games and themes.</p>
+        </div>
+      </div>
+      <div class="tabs">
+        <button class="tab active" data-tab="login">Login</button>
+        <button class="tab" data-tab="register">Register</button>
+      </div>
+      <div id="tab-login" class="auth-form active">
+        <button id="btn-google" class="btn white">Continue with Google</button>
+        <input id="login-email" type="email" placeholder="Email">
+        <input id="login-password" type="password" placeholder="Password">
+        <button id="btn-login" class="btn primary">Sign in</button>
+        <button id="btn-anon-toggle" class="btn ghost">Anonymous</button>
+        <div id="anon-form" class="mini-form hidden">
+          <input id="anon-name" placeholder="Display name">
+          <button id="btn-anon" class="btn primary">Enter</button>
+        </div>
+      </div>
+      <div id="tab-register" class="auth-form">
+        <input id="reg-username" placeholder="Display name">
+        <input id="reg-email" type="email" placeholder="Email">
+        <input id="reg-password" type="password" placeholder="Password">
+        <button id="btn-register" class="btn primary">Create account</button>
+      </div>
+      <div id="auth-error" class="error hidden"></div>
+    </div>
+  </section>
+
+  <section id="app-screen" class="app-screen screen">
+    <aside class="server-rail">
+      <div class="server-logo">N</div>
+      <button id="nav-chat" class="server-btn active" title="Chat">#</button>
+      <button id="nav-games" class="server-btn" title="Activities">G</button>
+      <button id="btn-theme-open" class="server-btn" title="Themes">T</button>
+      <button id="btn-admin-open" class="server-btn admin" title="Admin">A</button>
+    </aside>
+
+    <aside class="sidebar">
+      <div class="sidebar-search">Find or start a conversation</div>
+      <button id="btn-mobile-menu" class="side-item mobile-only">Close menu</button>
+      <button id="chat-home" class="side-item active">Friends</button>
+      <button id="btn-join-call" class="side-item voice"><span></span>Join General Call</button>
+      <div class="side-section">
+        <span>Rooms</span>
+        <button id="btn-new-room">+</button>
+      </div>
+      <div id="room-list" class="room-list"></div>
+      <div class="side-section">
+        <span>Join private</span>
+      </div>
+      <div class="private-join">
+        <input id="private-room-id" placeholder="Room ID">
+        <button id="btn-join-private">Join</button>
+      </div>
+      <footer class="user-panel">
+        <div id="sidebar-avatar" class="avatar">?</div>
+        <div class="user-name">
+          <b id="sidebar-name">User</b>
+          <small>Online</small>
+        </div>
+        <button id="btn-logout" class="panel-btn">Out</button>
+      </footer>
+    </aside>
+
+    <main id="chat-view" class="main-view active">
+      <header class="topbar">
+        <button id="btn-open-sidebar" class="mobile-only">Menu</button>
+        <b id="current-room-title">Friends</b>
+        <small id="room-member-count">Select or create a room</small>
+      </header>
+      <div id="messages-area" class="messages">
+        <div class="empty-state">
+          <div class="empty-icon">N</div>
+          <h2>Welcome to Nexus Chat App</h2>
+          <p>Pick General, create a room, join a call, or start an activity.</p>
+        </div>
+      </div>
+      <div id="typing-indicator" class="typing hidden"></div>
+      <form id="message-form" class="message-form">
+        <input id="message-input" placeholder="Message" disabled autocomplete="off">
+        <button id="btn-send" disabled>Send</button>
+      </form>
+    </main>
+
+    <main id="games-view" class="main-view">
+      <header class="topbar">
+        <b>Activities</b>
+        <small>Shared games for two people</small>
+      </header>
+      <section id="games-lobby" class="games-grid">
+        <article class="game-card"><h3>Tic Tac Toe</h3><p>Fast duel.</p><button class="game-create" data-type="tictactoe">Create</button></article>
+        <article class="game-card"><h3>Connect Four</h3><p>Drop pieces together.</p><button class="game-create" data-type="connect4">Create</button></article>
+        <article class="game-card"><h3>Rock Paper Scissors</h3><p>Quick party game.</p><button class="game-create" data-type="rps">Create</button></article>
+        <article class="game-card"><h3>Memory Match</h3><p>Shared card matching.</p><button class="game-create" data-type="memory">Create</button></article>
+        <div class="join-game"><input id="join-game-id" placeholder="Game ID"><button id="btn-join-game">Join</button></div>
+      </section>
+      <section id="game-area" class="game-area hidden"></section>
+    </main>
+
+    <aside class="active-panel">
+      <h3>Active Now</h3>
+      <div class="active-card">
+        <b>Nexus Chat App</b>
+        <p>Rooms, calls and games are live.</p>
+      </div>
+      <div id="members-list" class="members-list"></div>
+    </aside>
+
+    <section id="call-area" class="call-strip hidden">
+      <div id="video-grid" class="call-avatars">
+        <div class="call-avatar-tile local">
+          <video id="local-video" autoplay muted playsinline></video>
+          <span id="local-label">You</span>
+        </div>
+      </div>
+      <div class="call-buttons">
+        <button id="btn-toggle-cam" class="call-btn" title="Video off">V</button>
+        <button id="btn-share-screen" class="call-btn" title="Share screen">S</button>
+        <button id="btn-copy-call-id" class="call-btn" title="Invite">I</button>
+        <button id="btn-toggle-mic" class="call-btn mic" title="Mute">M</button>
+        <button id="btn-deafen" class="call-btn" title="Deafen">D</button>
+        <button id="btn-leave-call" class="call-btn leave" title="Leave">X</button>
+      </div>
+    </section>
+  </section>
+
+  <div id="room-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Create room</h2>
+      <input id="room-name" placeholder="Room name">
+      <label class="check"><input id="room-private" type="checkbox"> Private room</label>
+      <div class="modal-actions">
+        <button id="btn-room-cancel" class="btn ghost">Cancel</button>
+        <button id="btn-room-create" class="btn primary">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="theme-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Themes</h2>
+      <div class="theme-grid">
+        <button data-theme="midnight">Midnight</button>
+        <button data-theme="violet">Violet</button>
+        <button data-theme="ocean">Ocean</button>
+        <button data-theme="ember">Ember</button>
+        <button data-theme="forest">Forest</button>
+      </div>
+      <button id="btn-theme-close" class="btn ghost">Close</button>
+    </div>
+  </div>
+
+  <div id="admin-modal" class="modal hidden">
+    <div class="modal-card">
+      <h2>Admin menu</h2>
+      <p class="hint">PIN is checked securely on the server.</p>
+      <input id="admin-pin" type="password" inputmode="numeric" placeholder="PIN">
+      <div id="admin-error" class="error hidden"></div>
+      <div class="modal-actions">
+        <button id="btn-admin-cancel" class="btn ghost">Cancel</button>
+        <button id="btn-admin-unlock" class="btn primary">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="g_id_onload"
+    data-client_id="707884755832-fudsvdqb0ufm7isbfo0030v56psddksn.apps.googleusercontent.com"
+    data-callback="handleGoogleSignIn"
+    data-auto_prompt="false"
+    style="display:none"></div>
+  <script src="https://accounts.google.com/gsi/client" async></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

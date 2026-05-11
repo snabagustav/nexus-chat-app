@@ -1,9 +1,29 @@
 # Nexus Chat App
 
-Complete clean version with chat, rooms, calls, themes, games and admin.
+Complete production folder for Railway.
 
-Admin PIN is not stored in the repo. Set this Railway variable:
+Use this folder as the whole GitHub repo. Do not put it inside another `chatapp`
+folder.
 
-ADMIN_PIN_HASH=1c0a28994f19b94eee4d5bf6b1d0540bff9330f62e4c88398184ccdfff4d12d8
+Required Railway variables:
 
-That hash is for PIN 5693. Change it later by creating a new SHA-256 hash and updating Railway.
+- `JWT_SECRET`
+- `NODE_ENV=production`
+- `ADMIN_PIN_HASH`
+
+The admin PIN is not stored in this repository. Set `ADMIN_PIN_HASH` in Railway
+Variables. The PIN itself is checked only on the server.
+
+Admin flow:
+
+1. Log in to the app.
+2. Click the `A` button in the left rail.
+3. Enter your 4 digit PIN.
+4. The admin page opens at `/admin.html`.
+
+Railway:
+
+- Source repo: `snabagustav/nexus-chat-app`
+- Branch: `main`
+- Root directory: leave empty
+- Start command comes from `railway.toml`
