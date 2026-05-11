@@ -30,6 +30,8 @@ const iceServers = [
   { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
 ];
 
+let googleInitialized = false;
+
 function readJson(value) {
   try { return value ? JSON.parse(value) : null; } catch { return null; }
 }
@@ -99,16 +101,62 @@ async function auth(path, body) {
   }
 }
 
-window.handleGoogleSignIn = response => {
+function decodeGoogleCredential(credential) {
+  let encoded = String(credential || '').split('.')[1] || '';
+  encoded = encoded.replace(/-/g, '+').replace(/_/g, '/');
+  encoded += '='.repeat((4 - encoded.length % 4) % 4);
+  return JSON.parse(atob(encoded));
+}
+
+window.handleGoogleSignIn = async response => {
   try {
-    let encoded = response.credential.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    encoded += '='.repeat((4 - encoded.length % 4) % 4);
-    const payload = JSON.parse(atob(encoded));
-    auth('/api/auth/google', { email: payload.email, name: payload.name, picture: payload.picture, googleId: payload.sub });
+    if (!response?.credential) throw new Error('Missing credential');
+    const payload = decodeGoogleCredential(response.credential);
+    await auth('/api/auth/google', { email: payload.email, name: payload.name, picture: payload.picture, googleId: payload.sub });
   } catch {
     showError('Google login failed');
   }
 };
+
+function initGoogleSignIn() {
+  if (googleInitialized) return true;
+  if (!window.google?.accounts?.id) return false;
+  const holder = $('g_id_onload');
+  const clientId = holder?.dataset?.client_id;
+  if (!clientId) {
+    showError('Google Client ID is missing');
+    return false;
+  }
+  google.accounts.id.initialize({
+    client_id: clientId,
+    callback: window.handleGoogleSignIn,
+    auto_select: false,
+    cancel_on_tap_outside: true,
+    ux_mode: 'popup',
+  });
+  const button = $('google-button');
+  if (button) {
+    button.innerHTML = '';
+    google.accounts.id.renderButton(button, {
+      theme: 'outline',
+      size: 'large',
+      shape: 'rectangular',
+      text: 'continue_with',
+      width: 330,
+    });
+  }
+  googleInitialized = true;
+  return true;
+}
+
+function waitForGoogleSignIn() {
+  if (initGoogleSignIn()) return;
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries += 1;
+    if (initGoogleSignIn() || tries > 40) clearInterval(timer);
+  }, 250);
+}
 
 function bindAuth() {
   document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {
@@ -121,7 +169,17 @@ function bindAuth() {
   $('btn-register').addEventListener('click', () => auth('/api/auth/register', { username: $('reg-username').value, email: $('reg-email').value, password: $('reg-password').value }));
   $('btn-anon-toggle').addEventListener('click', () => $('anon-form').classList.toggle('hidden'));
   $('btn-anon').addEventListener('click', () => auth('/api/auth/anonymous', { username: $('anon-name').value }));
-  $('btn-google').addEventListener('click', () => window.google?.accounts?.id ? google.accounts.id.prompt() : showError('Google is still loading'));
+  $('btn-google').addEventListener('click', () => {
+    if (!initGoogleSignIn()) {
+      showError('Google is still loading. Wait one second and try again.');
+      return;
+    }
+    google.accounts.id.prompt(notification => {
+      if (notification?.isNotDisplayed?.() || notification?.isSkippedMoment?.()) {
+        showError('Use the Google button below, or check that your Railway URL is added in Google Cloud.');
+      }
+    });
+  });
 }
 
 async function startApp() {
@@ -801,4 +859,5 @@ function renderCheckers(game) {
 bindAuth();
 bindUi();
 bindCall();
+waitForGoogleSignIn();
 if (state.user && state.token) startApp();
