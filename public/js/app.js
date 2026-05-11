@@ -397,7 +397,7 @@ function bindUi() {
   $('btn-notifications').addEventListener('click', () => Notification?.requestPermission?.());
   $('btn-theme').addEventListener('click', () => $('theme-modal').classList.remove('hidden'));
   $('btn-theme-close').addEventListener('click', () => $('theme-modal').classList.add('hidden'));
-  document.querySelectorAll('[data-theme]').forEach(btn => btn.addEventListener('click', () => saveProfile({ theme: btn.dataset.theme })));
+  document.querySelectorAll('.theme-grid button[data-theme]').forEach(btn => btn.addEventListener('click', () => saveProfile({ theme: btn.dataset.theme }, true)));
   $('btn-admin').addEventListener('click', () => $('admin-modal').classList.remove('hidden'));
   $('btn-admin-cancel').addEventListener('click', () => $('admin-modal').classList.add('hidden'));
   $('btn-admin-unlock').addEventListener('click', unlockAdmin);
@@ -453,7 +453,7 @@ async function searchUsers() {
   document.querySelectorAll('[data-start-dm]').forEach(btn => btn.addEventListener('click', () => startDm(btn.dataset.startDm)));
 }
 
-async function saveProfile(changes) {
+async function saveProfile(changes, silent = false) {
   const body = {
     username: state.user.username,
     status: state.user.status,
@@ -467,7 +467,7 @@ async function saveProfile(changes) {
   state.user = data.user;
   localStorage.setItem('nexus_user', JSON.stringify(state.user));
   applyProfileUi();
-  toast('Saved');
+  if (!silent) toast('Saved');
 }
 
 async function updateProfilePicture() {
