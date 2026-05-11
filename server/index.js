@@ -1,10 +1,10 @@
 require('dotenv').config();
-const express=require('express'),http=require('http'),path=require('path'),jwt=require('jsonwebtoken'),bcrypt=require('bcryptjs');
+const express=require('express'),http=require('http'),path=require('path'),jwt=require('jsonwebtoken'),bcrypt=require('bcryptjs'),crypto=require('crypto');
 const{Server}=require('socket.io');const{v4:uuid}=require('uuid');
 const app=express(),server=http.createServer(app),io=new Server(server,{cors:{origin:'*'},transports:['polling'],pingTimeout:60000});
 app.use(express.json());app.use(express.static(path.join(__dirname,'../public')));app.set('trust proxy',1);
-const SECRET=process.env.JWT_SECRET||'dev_secret',ADMIN_EMAIL=process.env.ADMIN_EMAIL||'gustavenglund69@gmail.com',ADMIN_PIN=process.env.ADMIN_PIN||'5693';
-const users=new Map(),emails=new Map(),mods=new Set(),muted=new Set(),banned=new Set(),admins=new Set(),online=new Map(),calls=new Map(),games=new Map();
+const SECRET=process.env.JWT_SECRET||'dev_secret',ADMIN_EMAIL=process.env.ADMIN_EMAIL||'gustavenglund69@gmail.com',ADMIN_PIN_HASH=process.env.ADMIN_PIN_HASH||'';
+const users=new Map(),emails=new Map(),mods=new Set(),muted=new Set(),banned=new Set(),admins=new Set(),online=new Map(),calls=new Map(),games=new Map(),pinAttempts=new Map();
 const rooms=new Map([['general',{id:'general',name:'General',private:false,messages:[],members:new Set()}]]);
 const sign=u=>jwt.sign({id:u.id},SECRET,{expiresIn:'30d'}),ver=t=>{try{return jwt.verify(t,SECRET)}catch{return null}},getUser=req=>{let d=ver(req.headers.authorization?.split(' ')[1]);return d&&users.get(d.id)};
 const role=u=>u&&(u.email===ADMIN_EMAIL||admins.has(u.id))?'admin':u&&mods.has(u.id)?'moderator':'user';
@@ -15,7 +15,7 @@ app.post('/api/auth/login',async(req,res)=>{let email=String(req.body.email||'')
 app.post('/api/auth/anonymous',(req,res)=>{let username=String(req.body.username||'').trim();if(username.length<2)return res.status(400).json({error:'Enter a name'});let u={id:'anon_'+uuid(),username,email:null,avatar:username[0].toUpperCase(),theme:'midnight'};users.set(u.id,u);res.json({token:sign(u),user:safe(u)})});
 app.post('/api/auth/google',(req,res)=>{let email=String(req.body.email||'').toLowerCase().trim(),name=String(req.body.name||'Google User').trim();if(!email)return res.status(400).json({error:'Invalid Google'});let u=users.get(emails.get(email));if(!u){u={id:'google_'+String(req.body.googleId||uuid()),username:name,email,avatar:name[0].toUpperCase(),picture:req.body.picture,theme:'midnight'};users.set(u.id,u);emails.set(email,u.id)}res.json({token:sign(u),user:safe(u)})});
 app.post('/api/user/theme',(req,res)=>{let u=getUser(req);if(!u)return res.status(401).json({error:'Unauthorized'});u.theme=String(req.body.theme||'midnight');res.json({success:true,user:safe(u)})});
-app.post('/api/admin/unlock-pin',(req,res)=>{let u=getUser(req);if(!u)return res.status(401).json({error:'Login first'});if(String(req.body.pin)!==ADMIN_PIN)return res.status(403).json({error:'Wrong PIN'});admins.add(u.id);res.json({success:true,user:safe(u)})});
+app.post('/api/admin/unlock-pin',(req,res)=>{let u=getUser(req);if(!u)return res.status(401).json({error:'Login first'});if(!ADMIN_PIN_HASH)return res.status(503).json({error:'Admin PIN is not configured on the server'});let now=Date.now(),a=pinAttempts.get(u.id)||{count:0,until:0};if(a.until>now)return res.status(429).json({error:'Too many wrong PIN attempts. Wait a bit.'});let entered=String(req.body.pin||''),hash=crypto.createHash('sha256').update(entered).digest('hex');let ok=false;try{ok=crypto.timingSafeEqual(Buffer.from(hash,'hex'),Buffer.from(ADMIN_PIN_HASH,'hex'))}catch{ok=false}if(!ok){a.count++;if(a.count>=5){a.count=0;a.until=now+10*60*1000}pinAttempts.set(u.id,a);return res.status(403).json({error:'Wrong PIN'})}pinAttempts.delete(u.id);admins.add(u.id);res.json({success:true,user:safe(u)})});
 app.get('/api/rooms',(req,res)=>res.json([...rooms.values()].filter(r=>!r.private).map(r=>({id:r.id,name:r.name,private:r.private,memberCount:r.members.size}))));
 app.get('/api/admin/stats',need('mod'),(req,res)=>res.json({totalUsers:users.size,onlineUsers:online.size,totalRooms:rooms.size,totalMessages:[...rooms.values()].reduce((a,r)=>a+r.messages.length,0),games:games.size,muted:muted.size,mods:mods.size}));
 app.get('/api/admin/users',need('admin'),(req,res)=>res.json([...users.values()].map(safe)));
