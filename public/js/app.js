@@ -16,6 +16,8 @@ const state = {
   localStream: null,
   screenStream: null,
   cameraStream: null,
+  cameraTrack: null,
+  screenTrack: null,
   callId: '',
   peers: {},
   micOn: true,
@@ -298,6 +300,7 @@ function joinRoom(id) {
   state.socket.emit('join_room', id);
   renderRooms();
   showView('chat');
+  closeMobileSidebar();
 }
 
 function renderMessages(messages) {
@@ -359,6 +362,7 @@ function openDm(id) {
   $('dm-title').textContent = dm?.other?.username || 'Direct Message';
   state.socket.emit('join_dm', id);
   showView('dm');
+  closeMobileSidebar();
 }
 
 function renderDmMessages(messages) {
@@ -403,8 +407,13 @@ function showView(view) {
   document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item.dataset.view === view));
 }
 
+function closeMobileSidebar() {
+  document.querySelector('.sidebar')?.classList.remove('open');
+}
+
 function bindUi() {
   document.querySelectorAll('.nav[data-view]').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view)));
+  $('btn-mobile-sidebar')?.addEventListener('click', () => document.querySelector('.sidebar')?.classList.toggle('open'));
   $('btn-logout').addEventListener('click', logout);
   $('message-form').addEventListener('submit', e => {
     e.preventDefault();
@@ -614,8 +623,92 @@ function imageToSquareData(file) {
 
 async function refreshDevices() {
   const devices = await navigator.mediaDevices?.enumerateDevices?.().catch(() => []) || [];
-  $('mic-select').innerHTML = devices.filter(d => d.kind === 'audioinput').map(d => `<option value="${d.deviceId}">${esc(d.label || 'Microphone')}</option>`).join('');
-  $('cam-select').innerHTML = devices.filter(d => d.kind === 'videoinput').map(d => `<option value="${d.deviceId}">${esc(d.label || 'Camera')}</option>`).join('');
+  renderDeviceOptions($('mic-select'), devices.filter(d => d.kind === 'audioinput'), 'Microphone');
+  renderDeviceOptions($('cam-select'), devices.filter(d => d.kind === 'videoinput'), 'Camera');
+}
+
+function renderDeviceOptions(select, devices, fallback) {
+  const selected = select.value;
+  select.innerHTML = devices.length
+    ? devices.map((device, index) => `<option value="${device.deviceId}">${esc(device.label || `${fallback} ${index + 1}`)}</option>`).join('')
+    : `<option value="">Default ${fallback}</option>`;
+  if ([...select.options].some(option => option.value === selected)) select.value = selected;
+}
+
+function micConstraints() {
+  return $('mic-select').value ? { deviceId: { exact: $('mic-select').value } } : true;
+}
+
+function cameraConstraints() {
+  return $('cam-select').value ? { deviceId: { exact: $('cam-select').value } } : true;
+}
+
+async function replacePeerTrack(kind, nextTrack, stream, previousTrack = null) {
+  for (const [peerId, peer] of Object.entries(state.peers)) {
+    const senders = peer.pc.getSenders();
+    const sender = previousTrack
+      ? senders.find(item => item.track === previousTrack)
+      : senders.find(item => item.track?.kind === kind && item.track !== state.screenTrack);
+    if (sender) {
+      await sender.replaceTrack(nextTrack);
+    } else if (nextTrack) {
+      peer.pc.addTrack(nextTrack, stream);
+      await sendOffer(peerId);
+    }
+  }
+}
+
+function updateLocalCallPreview() {
+  $('local-video').srcObject = state.screenStream || state.localStream;
+  $('local-call-tile').classList.toggle('has-video', state.camOn || !!state.screenStream);
+  $('local-call-tile').classList.toggle('screen-share', !!state.screenStream);
+  $('btn-call-camera').classList.toggle('off', !state.camOn);
+  updateCallLayout();
+}
+
+async function switchMicrophone() {
+  if (!state.callId || !state.localStream) return;
+  const oldTrack = state.localStream.getAudioTracks()[0] || null;
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false });
+  const track = stream.getAudioTracks()[0];
+  if (!track) return;
+  track.enabled = state.micOn && !state.pushToTalk;
+  if (oldTrack) {
+    state.localStream.removeTrack(oldTrack);
+    oldTrack.stop();
+  }
+  state.localStream.addTrack(track);
+  await replacePeerTrack('audio', track, state.localStream, oldTrack);
+  await refreshDevices();
+  toast('Microphone updated');
+}
+
+async function switchCamera() {
+  if (!state.callId || !state.localStream) return;
+  const oldTrack = state.cameraTrack || state.localStream.getVideoTracks().find(track => track !== state.screenTrack) || null;
+  if (!state.camOn) {
+    if (oldTrack) {
+      state.localStream.removeTrack(oldTrack);
+      oldTrack.stop();
+      state.cameraTrack = null;
+    }
+    return;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints(), audio: false });
+  const track = stream.getVideoTracks()[0];
+  if (!track) return;
+  if (oldTrack) {
+    state.localStream.removeTrack(oldTrack);
+    oldTrack.stop();
+  }
+  state.cameraStream?.getTracks().forEach(item => { if (item !== track) item.stop(); });
+  state.cameraStream = stream;
+  state.cameraTrack = track;
+  state.localStream.addTrack(track);
+  await replacePeerTrack('video', track, state.localStream, oldTrack);
+  await refreshDevices();
+  updateLocalCallPreview();
+  toast('Camera updated');
 }
 
 async function startCall(callId = 'general-voice') {
@@ -625,8 +718,9 @@ async function startCall(callId = 'general-voice') {
   $('btn-join-call').innerHTML = '<span></span> Leave General Voice';
   await refreshDevices();
   try {
-    const audio = $('mic-select').value ? { deviceId: { exact: $('mic-select').value } } : true;
-    state.localStream = await navigator.mediaDevices.getUserMedia({ audio, video: false });
+    state.localStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false });
+    state.localStream.getAudioTracks().forEach(track => { track.enabled = state.micOn && !state.pushToTalk; });
+    await refreshDevices();
   } catch {
     state.localStream = new MediaStream();
     toast('Microphone blocked, joined listen-only.');
@@ -646,6 +740,9 @@ function leaveCall() {
   state.localStream = null;
   state.cameraStream = null;
   state.screenStream = null;
+  state.cameraTrack = null;
+  state.screenTrack = null;
+  state.camOn = false;
   state.socket.emit('call_leave', { callId: state.callId });
   state.callId = '';
   $('call-overlay').classList.add('hidden');
@@ -721,25 +818,22 @@ function updateCallLayout() {
 
 async function toggleCamera() {
   if (!state.callId) return;
-  const existing = state.localStream?.getVideoTracks()[0];
+  const existing = state.cameraTrack || state.localStream?.getVideoTracks().find(track => track !== state.screenTrack);
   if (existing) {
     existing.enabled = !existing.enabled;
     state.camOn = existing.enabled;
   } else {
-    const video = $('cam-select').value ? { deviceId: { exact: $('cam-select').value } } : true;
-    state.cameraStream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    state.cameraStream = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints(), audio: false });
     const track = state.cameraStream.getVideoTracks()[0];
+    state.cameraTrack = track;
     state.localStream.addTrack(track);
-    $('local-video').srcObject = state.localStream;
     state.camOn = true;
     for (const peerId of Object.keys(state.peers)) {
       state.peers[peerId].pc.addTrack(track, state.localStream);
       await sendOffer(peerId);
     }
   }
-  $('local-call-tile').classList.toggle('has-video', state.camOn || !!state.screenStream);
-  $('btn-call-camera').classList.toggle('off', !state.camOn);
-  updateCallLayout();
+  updateLocalCallPreview();
 }
 
 function toggleMic() {
@@ -759,26 +853,21 @@ async function shareScreen() {
   if (state.screenStream) {
     state.screenStream.getTracks().forEach(track => track.stop());
     state.screenStream = null;
+    state.screenTrack = null;
     $('btn-call-screen').classList.remove('active');
-    $('local-call-tile').classList.remove('screen-share');
-    $('local-video').srcObject = state.localStream;
-    $('local-call-tile').classList.toggle('has-video', state.camOn);
-    updateCallLayout();
+    updateLocalCallPreview();
     return;
   }
   state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-  $('local-video').srcObject = state.screenStream;
-  $('local-call-tile').classList.add('has-video', 'screen-share');
-  $('btn-call-screen').classList.add('active');
-  updateCallLayout();
   const track = state.screenStream.getVideoTracks()[0];
+  state.screenTrack = track;
+  $('btn-call-screen').classList.add('active');
+  updateLocalCallPreview();
   track.onended = () => {
     state.screenStream = null;
-    $('local-video').srcObject = state.localStream;
-    $('local-call-tile').classList.remove('screen-share');
-    $('local-call-tile').classList.toggle('has-video', state.camOn);
+    state.screenTrack = null;
     $('btn-call-screen').classList.remove('active');
-    updateCallLayout();
+    updateLocalCallPreview();
   };
   for (const peerId of Object.keys(state.peers)) {
     state.peers[peerId].pc.addTrack(track, state.screenStream);
@@ -801,6 +890,9 @@ function bindCall() {
   $('btn-call-screen').addEventListener('click', () => shareScreen().catch(() => {}));
   $('btn-call-invite').addEventListener('click', () => navigator.clipboard?.writeText(location.href));
   $('btn-call-ptt').addEventListener('click', togglePushToTalk);
+  $('mic-select').addEventListener('change', () => switchMicrophone().catch(() => toast('Could not switch microphone')));
+  $('cam-select').addEventListener('change', () => switchCamera().catch(() => toast('Could not switch camera')));
+  navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
   document.addEventListener('keydown', e => {
     if (state.pushToTalk && e.code === 'Space') state.localStream?.getAudioTracks().forEach(track => { track.enabled = true; });
   });
