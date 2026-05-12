@@ -15,6 +15,7 @@ const state = {
   attachment: null,
   localStream: null,
   screenStream: null,
+  cameraStream: null,
   callId: '',
   peers: {},
   micOn: true,
@@ -169,17 +170,6 @@ function bindAuth() {
   $('btn-register').addEventListener('click', () => auth('/api/auth/register', { username: $('reg-username').value, email: $('reg-email').value, password: $('reg-password').value }));
   $('btn-anon-toggle').addEventListener('click', () => $('anon-form').classList.toggle('hidden'));
   $('btn-anon').addEventListener('click', () => auth('/api/auth/anonymous', { username: $('anon-name').value }));
-  $('btn-google').addEventListener('click', () => {
-    if (!initGoogleSignIn()) {
-      showError('Google is still loading. Wait one second and try again.');
-      return;
-    }
-    google.accounts.id.prompt(notification => {
-      if (notification?.isNotDisplayed?.() || notification?.isSkippedMoment?.()) {
-        showError('Use the Google button below, or check that your Railway URL is added in Google Cloud.');
-      }
-    });
-  });
 }
 
 async function startApp() {
@@ -651,12 +641,16 @@ function leaveCall() {
   state.peers = {};
   document.querySelectorAll('.call-tile.remote').forEach(tile => tile.remove());
   state.localStream?.getTracks().forEach(track => track.stop());
+  state.cameraStream?.getTracks().forEach(track => track.stop());
   state.screenStream?.getTracks().forEach(track => track.stop());
   state.localStream = null;
+  state.cameraStream = null;
   state.screenStream = null;
   state.socket.emit('call_leave', { callId: state.callId });
   state.callId = '';
   $('call-overlay').classList.add('hidden');
+  $('call-stage').classList.remove('video-mode', 'screen-mode');
+  $('local-call-tile').classList.remove('has-video', 'screen-share');
   $('btn-join-call').innerHTML = '<span></span> Join General Voice';
 }
 
@@ -671,7 +665,10 @@ async function createPeer(peerId, info, initiator) {
     const peer = state.peers[peerId];
     if (!peer) return;
     event.streams[0].getTracks().forEach(track => peer.stream.addTrack(track));
-    if (event.track.kind === 'video') $(`call-tile-${peerId}`)?.classList.add('has-video');
+    if (event.track.kind === 'video') {
+      $(`call-tile-${peerId}`)?.classList.add('has-video');
+      updateCallLayout();
+    }
     const video = $(`call-video-${peerId}`);
     if (video) {
       video.srcObject = peer.stream;
@@ -699,6 +696,7 @@ function addCallTile(peerId, info) {
   tile.className = 'call-tile remote';
   tile.innerHTML = `<img src="${esc(safePic(info.picture))}" alt=""><video id="call-video-${peerId}" autoplay playsinline></video><span>${esc(info.username || 'User')}</span>`;
   $('call-stage').appendChild(tile);
+  updateCallLayout();
 }
 
 function removePeer(peerId) {
@@ -706,10 +704,19 @@ function removePeer(peerId) {
   delete state.peers[peerId];
   $(`call-tile-${peerId}`)?.remove();
   updateCallStatus();
+  updateCallLayout();
 }
 
 function updateCallStatus() {
   $('call-status').textContent = `${Object.keys(state.peers).length + 1} connected`;
+}
+
+function updateCallLayout() {
+  const stage = $('call-stage');
+  const hasVideo = !!stage.querySelector('.call-tile.has-video');
+  const hasScreen = !!stage.querySelector('.call-tile.screen-share');
+  stage.classList.toggle('video-mode', hasVideo);
+  stage.classList.toggle('screen-mode', hasScreen);
 }
 
 async function toggleCamera() {
@@ -720,8 +727,8 @@ async function toggleCamera() {
     state.camOn = existing.enabled;
   } else {
     const video = $('cam-select').value ? { deviceId: { exact: $('cam-select').value } } : true;
-    const cam = await navigator.mediaDevices.getUserMedia({ video, audio: false });
-    const track = cam.getVideoTracks()[0];
+    state.cameraStream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    const track = state.cameraStream.getVideoTracks()[0];
     state.localStream.addTrack(track);
     $('local-video').srcObject = state.localStream;
     state.camOn = true;
@@ -730,8 +737,9 @@ async function toggleCamera() {
       await sendOffer(peerId);
     }
   }
-  $('local-call-tile').classList.toggle('has-video', state.camOn);
+  $('local-call-tile').classList.toggle('has-video', state.camOn || !!state.screenStream);
   $('btn-call-camera').classList.toggle('off', !state.camOn);
+  updateCallLayout();
 }
 
 function toggleMic() {
@@ -752,17 +760,25 @@ async function shareScreen() {
     state.screenStream.getTracks().forEach(track => track.stop());
     state.screenStream = null;
     $('btn-call-screen').classList.remove('active');
+    $('local-call-tile').classList.remove('screen-share');
+    $('local-video').srcObject = state.localStream;
+    $('local-call-tile').classList.toggle('has-video', state.camOn);
+    updateCallLayout();
     return;
   }
   state.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
   $('local-video').srcObject = state.screenStream;
-  $('local-call-tile').classList.add('has-video');
+  $('local-call-tile').classList.add('has-video', 'screen-share');
   $('btn-call-screen').classList.add('active');
+  updateCallLayout();
   const track = state.screenStream.getVideoTracks()[0];
   track.onended = () => {
     state.screenStream = null;
     $('local-video').srcObject = state.localStream;
+    $('local-call-tile').classList.remove('screen-share');
+    $('local-call-tile').classList.toggle('has-video', state.camOn);
     $('btn-call-screen').classList.remove('active');
+    updateCallLayout();
   };
   for (const peerId of Object.keys(state.peers)) {
     state.peers[peerId].pc.addTrack(track, state.screenStream);

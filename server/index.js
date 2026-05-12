@@ -203,9 +203,35 @@ const blockedPatterns = blockedTerms.map(term => {
   return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, 'iu');
 });
 
+function normalizeForFilter(text) {
+  return ` ${String(text || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[013457@$]/g, char => ({ '0': 'o', '1': 'i', '3': 'e', '4': 'a', '5': 's', '7': 't', '@': 'a', '$': 's' }[char] || char))
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()} `;
+}
+
+const normalizedBlockedTerms = blockedTerms.map(term => normalizeForFilter(term).trim()).filter(Boolean);
+
 function containsBlockedWord(text) {
   const value = String(text || '').normalize('NFC');
-  return blockedPatterns.some(pattern => pattern.test(value));
+  const normalized = normalizeForFilter(value);
+  return blockedPatterns.some(pattern => pattern.test(value))
+    || normalizedBlockedTerms.some(term => normalized.includes(` ${term} `));
+}
+
+function checkLanguageBlock(user, content) {
+  const mutedUntil = db.muted[user.id] || 0;
+  if (mutedUntil > Date.now()) return `Muted for ${Math.ceil((mutedUntil - Date.now()) / 1000)}s`;
+  const cooldownUntil = swearCooldowns.get(user.id) || 0;
+  if (!isMod(user) && cooldownUntil > Date.now()) return `Language cooldown: wait ${Math.ceil((cooldownUntil - Date.now()) / 1000)}s`;
+  if (!isMod(user) && containsBlockedWord(content)) {
+    swearCooldowns.set(user.id, Date.now() + 60 * 1000);
+    return 'Message blocked. 60 second language cooldown started.';
+  }
+  return '';
 }
 
 function cleanName(value, fallback = 'User') {
@@ -673,14 +699,8 @@ io.on('connection', socket => {
     const room = db.rooms.find(item => item.id === data.roomId);
     const content = String(data.content || '').trim().slice(0, 1000);
     if (!room || (!content && !data.attachment)) return;
-    const mutedUntil = db.muted[user.id] || 0;
-    if (mutedUntil > Date.now()) return socket.emit('error_msg', `Muted for ${Math.ceil((mutedUntil - Date.now()) / 1000)}s`);
-    const cooldownUntil = swearCooldowns.get(user.id) || 0;
-    if (!isMod(user) && cooldownUntil > Date.now()) return socket.emit('error_msg', `Language cooldown: wait ${Math.ceil((cooldownUntil - Date.now()) / 1000)}s`);
-    if (!isMod(user) && containsBlockedWord(content)) {
-      swearCooldowns.set(user.id, Date.now() + 60 * 1000);
-      return socket.emit('error_msg', 'Message blocked. 60 second language cooldown started.');
-    }
+    const languageError = checkLanguageBlock(user, content);
+    if (languageError) return socket.emit('error_msg', languageError);
     let attachment = null;
     try { attachment = cleanAttachment(data.attachment); } catch (err) { return socket.emit('error_msg', err.message); }
     const mentions = extractMentions(content);
@@ -740,6 +760,8 @@ io.on('connection', socket => {
     const thread = db.dmThreads.find(item => item.id === data.dmId && item.members.includes(user.id));
     const content = String(data.content || '').trim().slice(0, 1000);
     if (!thread || !content) return;
+    const languageError = checkLanguageBlock(user, content);
+    if (languageError) return socket.emit('error_msg', languageError);
     const message = { id: uuid(), dmId: thread.id, userId: user.id, username: user.username, picture: user.picture || '', content, timestamp: Date.now() };
     thread.messages.push(message);
     thread.messages = thread.messages.slice(-500);
